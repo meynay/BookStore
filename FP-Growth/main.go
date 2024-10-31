@@ -5,11 +5,13 @@ import (
 	_ "encoding/json"
 	"fmt"
 	"log"
+	"os"
 	_ "os"
 	"sort"
 	_ "strconv"
 	"strings"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -148,7 +150,16 @@ func generateRules(frequentPatterns map[string]int, confidenceThreshold float64)
 }
 
 func main() {
-	db, err := sql.Open("postgres", "host=localhost user=admin password=p1Y2q3Z4m5H6 dbname=bookstore port=5432 sslmode=disable")
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("Error loading .env file")
+	}
+	port := os.Getenv("DB_PORT")
+	database := os.Getenv("DB_DB")
+	user := os.Getenv("DB_USER")
+	pass := os.Getenv("DB_PASSWORD")
+	host := os.Getenv("DB_HOST")
+	db, err := sql.Open("postgres", fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, pass, database, port))
 	if err != nil {
 		panic(err.Error())
 	}
