@@ -11,7 +11,7 @@ type LowBook struct {
 	Title    string `json:"title"`
 	Id       int    `json:"id"`
 	Price    int    `json:"price"`
-	ImageUrl string `json:"imageurl"`
+	ImageUrl string `json:"image_url"`
 }
 
 type UserLogin struct {
@@ -47,4 +47,9 @@ type Book struct {
 	Authors         []AuthorR `json:"authors"`
 	AverageRate     float32   `json:"average_rating"`
 	RateCount       int       `json:"rate_count"`
+}
+
+type FPG struct {
+	Base []int `json:"base"`
+	Res  []int `json:"result"`
 }

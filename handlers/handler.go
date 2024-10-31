@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -182,8 +185,66 @@ func (app *App) GetBook(c *gin.Context) {
 }
 
 func (app *App) RecommendByRecord(c *gin.Context) {
-	id := c.Param("id")
-	c.JSON(200, id)
+	id := c.Param("user_id")
+	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
+	if err != nil {
+		c.String(http.StatusNotFound, "No books read by user")
+		return
+	}
+	var bids []int
+	for res.Next() {
+		var bid int
+		if err := res.Scan(&bid); err != nil {
+			c.String(http.StatusConflict, "couldn't bind")
+		}
+		bids = append(bids, bid)
+	}
+	all := []models.FPG{}
+	jsonfile, _ := os.Open("FP-Growth/rules.json")
+	byteread, _ := ioutil.ReadAll(jsonfile)
+	json.Unmarshal(byteread, &all)
+	result := []int{}
+	for i := range all {
+		if functions.CheckCompatibility(bids, all[i].Base) {
+			for _, number := range all[i].Res {
+				if !functions.Exists(number, result) {
+					result = append(result, number)
+				}
+			}
+		}
+	}
+	if len(result) > 1 {
+		str := fmt.Sprintf("(%d", result[0])
+		for _, val := range result[1:] {
+			str = fmt.Sprintf("%s, %d", str, val)
+		}
+		str += ")"
+		books := []models.LowBook{}
+		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url FROM book WHERE book_id in %s", str))
+		if err != nil {
+			c.String(http.StatusConflict, "couldn't find books")
+			return
+		}
+		for res.Next() {
+			var book models.LowBook
+			res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl)
+			books = append(books, book)
+		}
+		c.JSON(http.StatusOK, books)
+		return
+	} else if len(result) == 1 {
+		res, err := app.DB.Query("SELECT title, book_id, price, image_url FROM book WHERE book_id=$1", result[0])
+		if err != nil {
+			c.String(http.StatusConflict, "couldn't find books")
+			return
+		}
+		res.Next()
+		var book models.LowBook
+		res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl)
+		c.JSON(http.StatusOK, book)
+		return
+	}
+	c.String(http.StatusNotFound, "No books found")
 }
 
 func (app *App) Login(c *gin.Context) {
@@ -232,4 +293,8 @@ func (app *App) Signup(c *gin.Context) {
 	}
 	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image) values ($1, $2, $3, $4, $5, $6, $7)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image)
 	c.String(http.StatusOK, "Signup successful")
+}
+
+func (app *App) RecommendByRates(c *gin.Context) {
+	c.String(http.StatusOK, "well")
 }

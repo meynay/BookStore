@@ -38,7 +38,7 @@ func main() {
 	engine.GET("/getbooks", app.GetBooks)
 	engine.GET("/getbook/:id", app.GetBook)
 	engine.GET("/getbooks/:genre", app.GetBooksByGenre)
-	engine.GET("/recommendbooksbyrecord/{id}", app.RecommendByRecord)
+	engine.GET("/recommendbooksbyrecord/:user_id", app.RecommendByRecord)
 	engine.POST("/login", app.Login)
 	engine.POST("/signup", app.Signup)
 	port := os.Getenv("PORT")
