@@ -298,3 +298,50 @@ func (app *App) Signup(c *gin.Context) {
 func (app *App) RecommendByRates(c *gin.Context) {
 	c.String(http.StatusOK, "well")
 }
+
+func (app *App) AddBook(c *gin.Context) {
+	var book models.Book
+	c.BindJSON(&book)
+	res, _ := app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
+	res.Next()
+	var bid int
+	res.Scan(&bid)
+	bid += 1
+	book.Id = bid
+	_, err := app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
+	if err != nil {
+		c.String(http.StatusConflict, "Couldn't record to DB")
+		return
+	}
+	for _, genre := range book.Genres {
+		app.DB.Exec("INSERT INTO book_genre(book_id, genre) VALUES($1, $2)", bid, genre)
+	}
+	for _, Author := range book.Authors {
+		res, err = app.DB.Query("SELECT author_id FROM authors WHERE name=$1", Author.Author)
+		if err == nil {
+			res.Next()
+			var id int
+			res.Scan(&id)
+			app.DB.Exec("INSERT INTO book_author(book_id, author_id, role) VALUES($1, $2, $3)", bid, id, Author.Role)
+		} else {
+			res, _ = app.DB.Query("SELECT author_id FROM authors ORDER BY author_id DESC LIMIT 1")
+			res.Next()
+			var aid int
+			res.Scan(&aid)
+			aid += 1
+			app.DB.Exec("INSERT INTO authors(author_id, name) VALUES($1, $2)", aid, Author.Author)
+			app.DB.Exec("INSERT INTO book_author(book_id, author_id) VALUES($1, $2)", bid, aid)
+		}
+	}
+	c.String(http.StatusOK, "book added to DB")
+}
+
+func (app *App) EditBook(c *gin.Context) {
+	var book models.Book
+	if err := c.BindJSON(&book); err != nil {
+		c.String(http.StatusFailedDependency, "Cannot bind json")
+		return
+	}
+	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
+	c.String(http.StatusOK, "Book updated")
+}
