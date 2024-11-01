@@ -86,6 +86,32 @@ func (app *App) GetBooksByGenre(c *gin.Context) {
 	c.JSON(http.StatusOK, books)
 }
 
+func (app *App) GetNewBooks(c *gin.Context) {
+	res, err := app.DB.Query("SELECT * FROM newbook")
+	if err != nil {
+		c.String(http.StatusNotFound, "No new books found!")
+		return
+	}
+	bids := []int{}
+	for res.Next() {
+		var bid int
+		var t time.Time
+		res.Scan(&bid, &t)
+		if time.Since(t) > time.Duration(720)*time.Hour {
+			app.DB.Exec("DELETE * FROM newbook WHERE book_id=$1", bid)
+		}
+		bids = append(bids, bid)
+	}
+	res, _ = app.DB.Query("SELECT book_id, title, image_url, price FROM book WHERE book_id IN $1", bids)
+	books := []models.LowBook{}
+	for res.Next() {
+		var book models.LowBook
+		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price)
+		books = append(books, book)
+	}
+	c.JSON(http.StatusOK, books)
+}
+
 func (app *App) GetBook(c *gin.Context) {
 	bid, _ := strconv.Atoi(c.Param("id"))
 	gotbooks, err := app.DB.Query("SELECT * FROM book WHERE book_id = $1", bid)
@@ -315,6 +341,7 @@ func (app *App) AddBook(c *gin.Context) {
 	}
 	for _, genre := range book.Genres {
 		app.DB.Exec("INSERT INTO book_genre(book_id, genre) VALUES($1, $2)", bid, genre)
+		app.DB.Exec("INSERT INTO newbook(book)id, time_added) VALUES($1, $2)", bid, time.Now())
 	}
 	for _, Author := range book.Authors {
 		res, err = app.DB.Query("SELECT author_id FROM authors WHERE name=$1", Author.Author)
