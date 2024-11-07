@@ -1,6 +1,20 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/dgrijalva/jwt-go"
+)
+
+type Claims struct {
+	Uid int `json:"user"`
+	jwt.StandardClaims
+}
+
+type JWTOutput struct {
+	Token   string    `json:"token"`
+	Expires time.Time `json:"expires"`
+}
 
 type AuthorR struct {
 	Author string `json:"author"`
@@ -8,10 +22,12 @@ type AuthorR struct {
 }
 
 type LowBook struct {
-	Title    string `json:"title"`
-	Id       int    `json:"id"`
-	Price    int    `json:"price"`
-	ImageUrl string `json:"image_url"`
+	Title    string  `json:"title"`
+	Id       int     `json:"id"`
+	Price    int     `json:"price"`
+	ImageUrl string  `json:"image_url"`
+	Rate     float64 `json:"rate"`
+	Count    int     `json:"rates_count"`
 }
 
 type UserLogin struct {
@@ -27,6 +43,7 @@ type User struct {
 	Phone     string `json:"phone"`
 	Email     string `json:"email"`
 	Password  string `json:"password"`
+	Role      bool   `json:"role"`
 }
 
 type Book struct {

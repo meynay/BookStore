@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/meynay/BookStore/functions"
 	"github.com/meynay/BookStore/models"
@@ -20,15 +22,34 @@ type App struct {
 	DB *sql.DB
 }
 
+func (app *App) AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenValue := c.GetHeader("Authorization")
+		claims := &models.Claims{}
+		tkn, err := jwt.ParseWithClaims(tokenValue, claims,
+			func(token *jwt.Token) (interface{}, error) {
+				return []byte(os.Getenv("JWT_SECRET")), nil
+			})
+		if err != nil {
+			c.AbortWithStatus(http.StatusUnauthorized)
+		}
+		if tkn == nil || !tkn.Valid {
+			c.AbortWithStatus(http.StatusUnauthorized)
+		}
+		c.Next()
+	}
+}
+
 func (app *App) GetBooks(c *gin.Context) {
 	books := []models.LowBook{}
-	gotbooks, _ := app.DB.Query("SELECT book_id, title, image_url, price FROM book ORDER BY RANDOM() LIMIT 500")
+	gotbooks, _ := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
 	for gotbooks.Next() {
 		var book_id int
 		var title string
 		var image_url string
-		var price int
-		if err := gotbooks.Scan(&book_id, &title, &image_url, &price); err != nil {
+		var price, count int
+		var rate float64
+		if err := gotbooks.Scan(&book_id, &title, &image_url, &price, &rate, &count); err != nil {
 			log.Println("Couldn't bind book")
 		} else {
 			book := models.LowBook{
@@ -36,6 +57,8 @@ func (app *App) GetBooks(c *gin.Context) {
 				Id:       book_id,
 				ImageUrl: image_url,
 				Price:    price,
+				Rate:     rate,
+				Count:    count,
 			}
 			books = append(books, book)
 		}
@@ -276,30 +299,52 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 func (app *App) Login(c *gin.Context) {
 	user := models.UserLogin{}
 	c.BindJSON(&user)
-	pass, err := functions.HashPassword(user.Password)
-	if err != nil {
-		c.String(http.StatusNotAcceptable, "password error")
+	user.Email = strings.ToLower(user.Email)
+	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
+	if !res.Next() || err != nil {
+		c.String(http.StatusNotFound, "Email not found")
 		return
 	}
-	res, err := app.DB.Query("SELECT user_id, firstname, lastname, phone, email, image FROM users WHERE email=$1, password=$2", user.Email, pass)
-	if err != nil {
-		c.String(http.StatusNotFound, "User not found")
-	}
-	res.Next()
-	theuser := models.User{}
-	err = res.Scan(&theuser.Id, &theuser.Firstname, &theuser.Lastname, &theuser.Phone, &theuser.Email, &theuser.Image)
+	var id int
+	var pass string
+	err = res.Scan(&id, &pass)
+	log.Println(id, pass)
 	if err != nil {
 		c.String(http.StatusConflict, "Couldn't bind user")
 		return
 	}
-	c.JSON(http.StatusOK, theuser)
+	err = functions.CompareHashAndPassword(pass, user.Password)
+	if err != nil {
+		c.String(http.StatusNotAcceptable, "Wrong password")
+		return
+	}
+	expirationTime := time.Now().Add(10 * time.Minute)
+	claims := &models.Claims{
+		Uid: id,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"error": err.Error()})
+		return
+	}
+	jwtOutput := models.JWTOutput{
+		Token:   tokenString,
+		Expires: expirationTime,
+	}
+	c.JSON(http.StatusOK, jwtOutput)
 }
 
 func (app *App) Signup(c *gin.Context) {
 	var user models.User
 	c.BindJSON(&user)
-	_, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
-	if err == nil {
+	user.Email = strings.ToLower(user.Email)
+	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
+	if res.Next() || err != nil {
 		c.String(http.StatusNotAcceptable, "Email or phone have already been used")
 		return
 	}
@@ -308,16 +353,13 @@ func (app *App) Signup(c *gin.Context) {
 		c.String(http.StatusConflict, "Password error")
 		return
 	}
-	res, err := app.DB.Query("SELECT user_id FROM users ORDER BY user_id DESC LIMIT BY 1")
-	if err != nil {
-		user.Id = 1
-	} else {
-		res.Next()
-		var id int
-		res.Scan(&id)
-		user.Id = id
-	}
-	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image) values ($1, $2, $3, $4, $5, $6, $7)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image)
+	res, _ = app.DB.Query("SELECT user_id FROM users ORDER BY user_id DESC LIMIT 1")
+	res.Next()
+	var id int
+	res.Scan(&id)
+	user.Id = id + 1
+	user.Role = false
+	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
 	c.String(http.StatusOK, "Signup successful")
 }
 

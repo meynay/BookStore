@@ -1,6 +1,15 @@
 package functions
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"log"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+func CompareHashAndPassword(hashed, pass string) error {
+
+	return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(pass))
+}
 
 func Exists(value int, arr []int) bool {
 	for _, val := range arr {
@@ -17,6 +26,7 @@ func HashPassword(password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	log.Println(string(hash))
 	return string(hash), nil
 }
 
