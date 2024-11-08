@@ -111,8 +111,9 @@ func (app *App) GetBook(c *gin.Context) {
 		var description string
 		var price int
 		var quantity_sale int
-		var quantity_lib int
-		if err := gotbooks.Scan(&book_id, &title, &isbn, &image_url, &publication_date, &isbn13, &num_pages, &publisher, &book_format, &description, &price, &quantity_sale, &quantity_lib); err != nil {
+		var quantity_lib, rate_count int
+		var avg_rate float64
+		if err := gotbooks.Scan(&book_id, &title, &isbn, &image_url, &publication_date, &isbn13, &num_pages, &publisher, &book_format, &description, &price, &quantity_sale, &quantity_lib, &avg_rate, &rate_count); err != nil {
 			c.String(http.StatusForbidden, "Couldn't bind")
 			return
 		} else {
@@ -152,20 +153,6 @@ func (app *App) GetBook(c *gin.Context) {
 					}
 				}
 			}
-			average_rate := float64(0)
-			count := 0
-			rates, err := app.DB.Query("SELECT rate FROM user_rates WHERE book_id=$1", book_id)
-			if err == nil {
-				for rates.Next() {
-					var rate int
-					if err := rates.Scan(&rate); err != nil {
-						log.Fatal(err)
-					}
-					average_rate += float64(rate)
-					count++
-				}
-				average_rate /= float64(count)
-			}
 			book := models.Book{
 				Title:           title,
 				Id:              book_id,
@@ -182,8 +169,8 @@ func (app *App) GetBook(c *gin.Context) {
 				Price:           price,
 				Authors:         authors,
 				Genres:          genres,
-				AverageRate:     average_rate,
-				RateCount:       count,
+				AverageRate:     avg_rate,
+				RateCount:       rate_count,
 			}
 			c.JSON(http.StatusOK, book)
 		}
