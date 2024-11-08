@@ -47,6 +47,8 @@ func main() {
 		engine.GET("/recommendbooksbyrate", app.RecommendByRates)
 		engine.POST("/addbook", app.AddBook)
 		engine.PUT("/editbook", app.EditBook)
+		engine.GET("/favecheck", app.CheckIfFaved)
+		engine.POST("/fave", app.FaveOrUnfave)
 	}
 	port := os.Getenv("PORT")
 	host := os.Getenv("HOST")

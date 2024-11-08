@@ -66,49 +66,6 @@ func (app *App) GetBooks(c *gin.Context) {
 	c.JSON(http.StatusOK, books)
 }
 
-func (app *App) GetBooksByGenre(c *gin.Context) {
-	genre := c.Param("genre")
-	var bids []int
-	gotbookids, err := app.DB.Query("SELECT book_id FROM book_genre WHERE genre=$1", genre)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Bad request")
-		return
-	}
-	for gotbookids.Next() {
-		var id int
-		if err := gotbookids.Scan(&id); err != nil {
-			log.Fatal(err)
-		}
-		bids = append(bids, id)
-	}
-	str := fmt.Sprintf("(%d", bids[0])
-	for _, bid := range bids[1:] {
-		str = fmt.Sprintf("%s, %d", str, bid)
-	}
-	str += ")"
-	res, _ := app.DB.Prepare(fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN %s", str))
-	gotbooks, err := res.Query()
-	if err != nil {
-		c.String(http.StatusNoContent, "Couldn't find books")
-		return
-	}
-	books := []models.LowBook{}
-	for gotbooks.Next() {
-		var id, price int
-		var title, image_url string
-		if err := gotbooks.Scan(&id, &title, &image_url, &price); err == nil {
-			book := models.LowBook{
-				Title:    title,
-				Id:       id,
-				ImageUrl: image_url,
-				Price:    price,
-			}
-			books = append(books, book)
-		}
-	}
-	c.JSON(http.StatusOK, books)
-}
-
 func (app *App) GetNewBooks(c *gin.Context) {
 	res, err := app.DB.Query("SELECT * FROM newbook")
 	if err != nil {
@@ -231,6 +188,33 @@ func (app *App) GetBook(c *gin.Context) {
 			c.JSON(http.StatusOK, book)
 		}
 	}
+}
+
+func (app *App) CheckIfFaved(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	bid := c.Param("book_id")
+	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
+	if err != nil || !res.Next() {
+		c.String(http.StatusNotAcceptable, "Not added before")
+		return
+	}
+	c.String(http.StatusAccepted, "Added before")
+}
+
+func (app *App) FaveOrUnfave(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	bid := c.PostForm("book_id")
+	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured")
+	}
+	if !res.Next() {
+		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", bid, uid)
+		c.String(http.StatusAccepted, "Book added to faves")
+		return
+	}
+	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
+	c.String(http.StatusAccepted, "Book deleted from faves")
 }
 
 func (app *App) RecommendByRecord(c *gin.Context) {
@@ -364,7 +348,8 @@ func (app *App) Signup(c *gin.Context) {
 }
 
 func (app *App) RecommendByRates(c *gin.Context) {
-	c.String(http.StatusOK, "well")
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	c.String(http.StatusOK, fmt.Sprintf("Works for now %d", id))
 }
 
 func (app *App) AddBook(c *gin.Context) {
