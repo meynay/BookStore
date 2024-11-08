@@ -35,6 +35,15 @@ type UserLogin struct {
 	Password string `json:"password"`
 }
 
+type Filter struct {
+	Genres    []string  `json:"genres"`
+	StartDate time.Time `json:"start_date"`
+	EndDate   time.Time `json:"end_date"`
+	Search    string    `json:"search"`
+	MinPages  int       `json:"min_pages"`
+	MaxPages  int       `json:"max_pages"`
+}
+
 type User struct {
 	Id        int    `json:"user_id"`
 	Firstname string `json:"firstname"`
@@ -62,7 +71,7 @@ type Book struct {
 	Price           int       `json:"price"`
 	Genres          []string  `json:"genres"`
 	Authors         []AuthorR `json:"authors"`
-	AverageRate     float32   `json:"average_rating"`
+	AverageRate     float64   `json:"average_rating"`
 	RateCount       int       `json:"rate_count"`
 }
 

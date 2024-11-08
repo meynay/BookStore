@@ -37,11 +37,12 @@ func main() {
 	engine := gin.Default()
 	engine.GET("/getbooks", app.GetBooks)
 	engine.GET("/getbook/:id", app.GetBook)
-	engine.GET("/getbooks/:genre", app.GetBooksByGenre)
+	engine.GET("/filterbooks", app.FilterBooks)
 	engine.POST("/login", app.Login)
 	engine.POST("/signup", app.Signup)
 	engine.Use(app.AuthMiddleware())
 	{
+		engine.GET("/userprofile", app.GetUserProfile)
 		engine.GET("/recommendbooksbyrecord", app.RecommendByRecord)
 		engine.GET("/recommendbooksbyrate", app.RecommendByRates)
 		engine.POST("/addbook", app.AddBook)

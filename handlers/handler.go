@@ -195,7 +195,7 @@ func (app *App) GetBook(c *gin.Context) {
 					}
 				}
 			}
-			average_rate := float32(0)
+			average_rate := float64(0)
 			count := 0
 			rates, err := app.DB.Query("SELECT rate FROM user_rates WHERE book_id=$1", book_id)
 			if err == nil {
@@ -204,10 +204,10 @@ func (app *App) GetBook(c *gin.Context) {
 					if err := rates.Scan(&rate); err != nil {
 						log.Fatal(err)
 					}
-					average_rate += float32(rate)
+					average_rate += float64(rate)
 					count++
 				}
-				average_rate /= float32(count)
+				average_rate /= float64(count)
 			}
 			book := models.Book{
 				Title:           title,
@@ -234,7 +234,7 @@ func (app *App) GetBook(c *gin.Context) {
 }
 
 func (app *App) RecommendByRecord(c *gin.Context) {
-	id := c.Param("user_id")
+	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
 	if err != nil {
 		c.String(http.StatusNotFound, "No books read by user")
@@ -413,4 +413,77 @@ func (app *App) EditBook(c *gin.Context) {
 	}
 	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
 	c.String(http.StatusOK, "Book updated")
+}
+
+func (app *App) GetUserProfile(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, _ := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
+	res.Next()
+	var fname, lname, image string
+	res.Scan(&fname, &lname, &image)
+	c.JSON(http.StatusAccepted, gin.H{
+		"firstname": fname,
+		"lastname":  lname,
+		"image":     image,
+	})
+}
+
+func (app *App) FilterBooks(c *gin.Context) {
+	filters := models.Filter{}
+	if err := c.ShouldBindBodyWithJSON(&filters); err != nil {
+		c.String(http.StatusBadRequest, "Couldn't bind json")
+		return
+	}
+	books := []models.Book{}
+	if len(filters.Genres) > 0 {
+		res, _ := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
+		book_ids := []int{}
+		for res.Next() {
+			var id int
+			res.Scan(&id)
+			book_ids = append(book_ids, id)
+		}
+		res, _ = app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in $1", book_ids)
+		for res.Next() {
+			var b models.Book
+			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
+			books = append(books, b)
+		}
+	} else {
+		res, _ := app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book")
+		for res.Next() {
+			var b models.Book
+			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
+			books = append(books, b)
+		}
+	}
+	if filters.Search != "" {
+		filters.Search = strings.ToLower(filters.Search)
+		for id, book := range books {
+			if !strings.Contains(strings.ToLower(book.Title), filters.Search) && !strings.Contains(strings.ToLower(book.Publisher), filters.Search) {
+				books = append(books[:id], books[id+1:]...)
+			}
+		}
+	}
+	for id, book := range books {
+		if !(book.NumberOfPages > filters.MinPages && book.NumberOfPages < filters.MaxPages) || !(book.PublicationDate.After(filters.StartDate) && book.PublicationDate.Before(filters.EndDate)) {
+			books = append(books[:id], books[id+1:]...)
+		}
+	}
+	if len(books) == 0 {
+		c.String(http.StatusBadRequest, "No books found for given filters")
+		return
+	}
+	returning := []models.LowBook{}
+	for _, book := range books {
+		returning = append(returning, models.LowBook{
+			Title:    book.Title,
+			ImageUrl: book.ImageUrl,
+			Rate:     book.AverageRate,
+			Count:    book.RateCount,
+			Id:       book.Id,
+			Price:    book.Price,
+		})
+	}
+	c.JSON(http.StatusAccepted, returning)
 }
