@@ -16,6 +16,12 @@ type JWTOutput struct {
 	Expires time.Time `json:"expires"`
 }
 
+type UserComment struct {
+	Name    string `json:"name"`
+	Rate    int    `json:"rate"`
+	Comment string `json:"comment"`
+}
+
 type Rate struct {
 	Bid    int    `json:"book_id"`
 	Rating int    `json:"rating"`

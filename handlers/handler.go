@@ -517,3 +517,56 @@ func (app *App) RateBook(c *gin.Context) {
 	app.DB.Exec("UPDATE book SET avg_rate=$1, rate_count=$2 WHERE book_id=$3", avg, count, rate.Bid)
 	c.String(http.StatusAccepted, "Rate added")
 }
+
+func (app *App) CommentOnBook(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	var rate models.Rate
+	c.BindJSON(&rate)
+	app.DB.Exec("INSERT INTO comment(book_id, user_id, review, date_added) values($1, $2, $3, $4)", rate.Bid, uid, rate.Review, time.Now())
+	c.String(http.StatusAccepted, "Comment added")
+}
+
+func (app *App) GetComments(c *gin.Context) {
+	book_id, _ := strconv.Atoi(c.Param("book_id"))
+	res, err := app.DB.Query("SELECT (firstname || ' ' || lastname) as name, review FROM comment INNER JOIN users ON comment.user_id=users.user_id WHERE comment.book_id=$1", book_id)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured")
+		return
+	}
+
+	comments := []models.UserComment{}
+	for res.Next() {
+		comment := models.UserComment{}
+		if err := res.Scan(&comment.Name, &comment.Comment); err != nil {
+			c.String(http.StatusInternalServerError, "Couldn't find comments on this book")
+			return
+		}
+		comments = append(comments, comment)
+	}
+	if len(comments) == 0 {
+		c.String(http.StatusNotFound, "No comments found")
+	}
+	c.JSON(http.StatusOK, comments)
+}
+
+func (app *App) GetRates(c *gin.Context) {
+	book_id, _ := strconv.Atoi(c.Param("book_id"))
+	res, err := app.DB.Query("SELECT (firstname || ' ' || lastname) as name, review, rating FROM user_rating INNER JOIN users ON user_rating.user_id=users.user_id WHERE user_rating.book_id=$1", book_id)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured")
+		return
+	}
+	comments := []models.UserComment{}
+	for res.Next() {
+		comment := models.UserComment{}
+		if err := res.Scan(&comment.Name, &comment.Comment, &comment.Rate); err != nil {
+			c.String(http.StatusInternalServerError, "Couldn't find comments on this book")
+			return
+		}
+		comments = append(comments, comment)
+	}
+	if len(comments) == 0 {
+		c.String(http.StatusNotFound, "No comments found")
+	}
+	c.JSON(http.StatusOK, comments)
+}

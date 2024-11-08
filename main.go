@@ -41,6 +41,8 @@ func main() {
 	engine.GET("/filterbooks", app.FilterBooks)
 	engine.POST("/login", app.Login)
 	engine.POST("/signup", app.Signup)
+	engine.GET("/rates/:book_id", app.GetRates)
+	engine.GET("/comments/:book_id", app.GetComments)
 	engine.Use(app.AuthMiddleware())
 	{
 		engine.GET("/userprofile", app.GetUserProfile)
@@ -51,6 +53,7 @@ func main() {
 		engine.GET("/favecheck", app.CheckIfFaved)
 		engine.POST("/fave", app.FaveOrUnfave)
 		engine.POST("/ratebook", app.RateBook)
+		engine.POST("/commentbook", app.CommentOnBook)
 	}
 	port := os.Getenv("PORT")
 	host := os.Getenv("HOST")
