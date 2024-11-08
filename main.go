@@ -37,6 +37,7 @@ func main() {
 	engine := gin.Default()
 	engine.GET("/getbooks", app.GetBooks)
 	engine.GET("/getbook/:id", app.GetBook)
+	engine.GET("/newbooks", app.GetNewBooks)
 	engine.GET("/filterbooks", app.FilterBooks)
 	engine.POST("/login", app.Login)
 	engine.POST("/signup", app.Signup)
@@ -49,6 +50,7 @@ func main() {
 		engine.PUT("/editbook", app.EditBook)
 		engine.GET("/favecheck", app.CheckIfFaved)
 		engine.POST("/fave", app.FaveOrUnfave)
+		engine.POST("/ratebook", app.RateBook)
 	}
 	port := os.Getenv("PORT")
 	host := os.Getenv("HOST")

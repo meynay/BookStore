@@ -477,3 +477,43 @@ func (app *App) FilterBooks(c *gin.Context) {
 	}
 	c.JSON(http.StatusAccepted, returning)
 }
+
+func (app *App) RateBook(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	var rate models.Rate
+	c.BindJSON(&rate)
+	var rating int
+	var b bool = false
+	res, _ := app.DB.Query("SELECT rating FROM user_rating WHERE user_id=$1 AND book_id=$2", uid, rate.Bid)
+	if res.Next() {
+		res.Scan(&rating)
+		b = true
+	}
+	date_added := time.Now()
+	_, err := app.DB.Exec("INSERT INTO user_rating(user_id, book_id, rating, review, date_added) values($1, $2, $3, $4, $5)", uid, rate.Bid, rate.Rating, rate.Review, date_added)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured")
+		return
+	}
+	res, err = app.DB.Query("SELECT avg_rate, rate_count FROM book WHERE book_id=$1")
+	if err != nil {
+		c.String(http.StatusBadRequest, "Err occured")
+		return
+	}
+	res.Next()
+	var avg float64
+	var count int
+	res.Scan(&avg, &count)
+	if b {
+		avg = avg * float64(count)
+		avg = avg - float64(rating) + float64(rate.Rating)
+		avg /= float64(count)
+	} else {
+		avg = avg * float64(count)
+		avg += +float64(rate.Rating)
+		count++
+		avg /= float64(count)
+	}
+	app.DB.Exec("UPDATE book SET avg_rate=$1, rate_count=$2 WHERE book_id=$3", avg, count, rate.Bid)
+	c.String(http.StatusAccepted, "Rate added")
+}
