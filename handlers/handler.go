@@ -203,17 +203,22 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 
 func (app *App) FaveOrUnfave(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	bid := c.PostForm("book_id")
-	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
+	var js struct {
+		Id int `json:"book_id"`
+	}
+	c.BindJSON(&js)
+	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
+	log.Println(js.Id)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error occured")
+		return
 	}
 	if !res.Next() {
-		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", bid, uid)
+		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", js.Id, uid)
 		c.String(http.StatusAccepted, "Book added to faves")
 		return
 	}
-	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
+	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
 	c.String(http.StatusAccepted, "Book deleted from faves")
 }
 
