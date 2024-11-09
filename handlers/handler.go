@@ -345,9 +345,18 @@ func (app *App) RecommendByRates(c *gin.Context) {
 }
 
 func (app *App) AddBook(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, _ := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.String(http.StatusBadRequest, "You cannot add book if you are not an admin!!")
+		return
+	}
 	var book models.Book
 	c.BindJSON(&book)
-	res, _ := app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
+	res, _ = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
 	res.Next()
 	var bid int
 	res.Scan(&bid)
@@ -383,9 +392,18 @@ func (app *App) AddBook(c *gin.Context) {
 }
 
 func (app *App) EditBook(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, _ := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.String(http.StatusBadRequest, "You cannot add book if you are not an admin!!")
+		return
+	}
 	var book models.Book
 	if err := c.BindJSON(&book); err != nil {
-		c.String(http.StatusFailedDependency, "Cannot bind json")
+		c.String(http.StatusBadRequest, "Cannot bind json")
 		return
 	}
 	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)

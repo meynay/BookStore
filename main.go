@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -35,6 +37,14 @@ func main() {
 		DB: getDB(),
 	}
 	engine := gin.Default()
+	engine.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"0.0.0.0"}, // Change to your domain
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 	engine.GET("/getbooks", app.GetBooks)
 	engine.GET("/getbook/:id", app.GetBook)
 	engine.GET("/newbooks", app.GetNewBooks)
