@@ -38,7 +38,7 @@ func main() {
 	}
 	engine := gin.Default()
 	engine.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"0.0.0.0"}, // Change to your domain
+		AllowOrigins:     []string{"*"}, // Change to your domain
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},

@@ -18,6 +18,8 @@ import (
 	"github.com/meynay/BookStore/models"
 )
 
+const FP_GROWTH_ROUTE = "FP-Growth/rules.json"
+
 type App struct {
 	DB *sql.DB
 }
@@ -42,7 +44,11 @@ func (app *App) AuthMiddleware() gin.HandlerFunc {
 
 func (app *App) GetBooks(c *gin.Context) {
 	books := []models.LowBook{}
-	gotbooks, _ := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
+	gotbooks, err := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
+	if err != nil {
+		c.String(http.StatusBadRequest, "couldn't get books")
+		return
+	}
 	for gotbooks.Next() {
 		var book_id int
 		var title string
@@ -82,7 +88,11 @@ func (app *App) GetNewBooks(c *gin.Context) {
 		}
 		bids = append(bids, bid)
 	}
-	res, _ = app.DB.Query("SELECT book_id, title, image_url, price FROM book WHERE book_id IN $1", bids)
+	res, err = app.DB.Query("SELECT book_id, title, image_url, price FROM book WHERE book_id IN $1", bids)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error gettinn books")
+		return
+	}
 	books := []models.LowBook{}
 	for res.Next() {
 		var book models.LowBook
@@ -225,7 +235,7 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 		bids = append(bids, bid)
 	}
 	all := []models.FPG{}
-	jsonfile, _ := os.Open("FP-Growth/rules.json")
+	jsonfile, _ := os.Open(FP_GROWTH_ROUTE)
 	byteread, _ := ioutil.ReadAll(jsonfile)
 	json.Unmarshal(byteread, &all)
 	result := []int{}
@@ -274,7 +284,11 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 
 func (app *App) Login(c *gin.Context) {
 	user := models.UserLogin{}
-	c.BindJSON(&user)
+	err := c.BindJSON(&user)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Couldn't bind json file")
+		return
+	}
 	user.Email = strings.ToLower(user.Email)
 	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
 	if !res.Next() || err != nil {
@@ -294,7 +308,7 @@ func (app *App) Login(c *gin.Context) {
 		c.String(http.StatusNotAcceptable, "Wrong password")
 		return
 	}
-	expirationTime := time.Now().Add(10 * time.Minute)
+	expirationTime := time.Now().Add(30 * time.Minute)
 	claims := &models.Claims{
 		Uid: id,
 		StandardClaims: jwt.StandardClaims{
@@ -317,7 +331,11 @@ func (app *App) Login(c *gin.Context) {
 
 func (app *App) Signup(c *gin.Context) {
 	var user models.User
-	c.BindJSON(&user)
+	err := c.BindJSON(&user)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Couldn't bind user")
+		return
+	}
 	user.Email = strings.ToLower(user.Email)
 	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
 	if res.Next() || err != nil {
@@ -346,7 +364,11 @@ func (app *App) RecommendByRates(c *gin.Context) {
 
 func (app *App) AddBook(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, _ := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured to DB")
+		return
+	}
 	res.Next()
 	var b bool
 	res.Scan(&b)
@@ -355,14 +377,22 @@ func (app *App) AddBook(c *gin.Context) {
 		return
 	}
 	var book models.Book
-	c.BindJSON(&book)
-	res, _ = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
+	err = c.BindJSON(&book)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error binding json")
+		return
+	}
+	res, err = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured to DB")
+		return
+	}
 	res.Next()
 	var bid int
 	res.Scan(&bid)
 	bid += 1
 	book.Id = bid
-	_, err := app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
+	_, err = app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
 	if err != nil {
 		c.String(http.StatusConflict, "Couldn't record to DB")
 		return
@@ -393,7 +423,11 @@ func (app *App) AddBook(c *gin.Context) {
 
 func (app *App) EditBook(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, _ := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured to DB")
+		return
+	}
 	res.Next()
 	var b bool
 	res.Scan(&b)
@@ -412,7 +446,11 @@ func (app *App) EditBook(c *gin.Context) {
 
 func (app *App) GetUserProfile(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, _ := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
+	res, err := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured to DB")
+		return
+	}
 	res.Next()
 	var fname, lname, image string
 	res.Scan(&fname, &lname, &image)
@@ -431,21 +469,33 @@ func (app *App) FilterBooks(c *gin.Context) {
 	}
 	books := []models.Book{}
 	if len(filters.Genres) > 0 {
-		res, _ := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
+		res, err := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
+		if err != nil {
+			c.String(http.StatusBadRequest, "Error occured to DB")
+			return
+		}
 		book_ids := []int{}
 		for res.Next() {
 			var id int
 			res.Scan(&id)
 			book_ids = append(book_ids, id)
 		}
-		res, _ = app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in $1", book_ids)
+		res, err = app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in $1", book_ids)
+		if err != nil {
+			c.String(http.StatusBadRequest, "Error occured to DB")
+			return
+		}
 		for res.Next() {
 			var b models.Book
 			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
 			books = append(books, b)
 		}
 	} else {
-		res, _ := app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book")
+		res, err := app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book")
+		if err != nil {
+			c.String(http.StatusBadRequest, "Error occured to DB")
+			return
+		}
 		for res.Next() {
 			var b models.Book
 			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
@@ -486,16 +536,24 @@ func (app *App) FilterBooks(c *gin.Context) {
 func (app *App) RateBook(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	var rate models.Rate
-	c.BindJSON(&rate)
+	err := c.BindJSON(&rate)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error binding json")
+		return
+	}
 	var rating int
 	var b bool = false
-	res, _ := app.DB.Query("SELECT rating FROM user_rating WHERE user_id=$1 AND book_id=$2", uid, rate.Bid)
+	res, err := app.DB.Query("SELECT rating FROM user_rating WHERE user_id=$1 AND book_id=$2", uid, rate.Bid)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error occured to DB")
+		return
+	}
 	if res.Next() {
 		res.Scan(&rating)
 		b = true
 	}
 	date_added := time.Now()
-	_, err := app.DB.Exec("INSERT INTO user_rating(user_id, book_id, rating, review, date_added) values($1, $2, $3, $4, $5)", uid, rate.Bid, rate.Rating, rate.Review, date_added)
+	_, err = app.DB.Exec("INSERT INTO user_rating(user_id, book_id, rating, review, date_added) values($1, $2, $3, $4, $5)", uid, rate.Bid, rate.Rating, rate.Review, date_added)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error occured")
 		return
@@ -526,7 +584,11 @@ func (app *App) RateBook(c *gin.Context) {
 func (app *App) CommentOnBook(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	var rate models.Rate
-	c.BindJSON(&rate)
+	err := c.BindJSON(&rate)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error binding json")
+		return
+	}
 	app.DB.Exec("INSERT INTO comment(book_id, user_id, review, date_added) values($1, $2, $3, $4)", rate.Bid, uid, rate.Review, time.Now())
 	c.String(http.StatusAccepted, "Comment added")
 }
@@ -535,7 +597,7 @@ func (app *App) GetComments(c *gin.Context) {
 	book_id, _ := strconv.Atoi(c.Param("book_id"))
 	res, err := app.DB.Query("SELECT (firstname || ' ' || lastname) as name, review FROM comment INNER JOIN users ON comment.user_id=users.user_id WHERE comment.book_id=$1", book_id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured")
+		c.String(http.StatusBadRequest, "Error occured to DB")
 		return
 	}
 
