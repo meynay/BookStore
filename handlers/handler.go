@@ -256,9 +256,18 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 	}
 	res.Close()
 	all := []models.FPG{}
-	jsonfile, _ := os.Open(FP_GROWTH_ROUTE)
-	byteread, _ := ioutil.ReadAll(jsonfile)
-	json.Unmarshal(byteread, &all)
+	jsonfile, err := os.Open(FP_GROWTH_ROUTE)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway")
+	}
+	byteread, err := ioutil.ReadAll(jsonfile)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway2")
+	}
+	err = json.Unmarshal(byteread, &all)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway3")
+	}
 	result := []int{}
 	resMap := make(map[int]struct{})
 	for i := range all {
