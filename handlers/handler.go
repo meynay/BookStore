@@ -303,11 +303,11 @@ func (app *App) Login(c *gin.Context) {
 	}
 	user.Email = strings.ToLower(user.Email)
 	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
-	defer res.Close()
 	if err != nil || !res.Next() {
 		c.String(http.StatusNotFound, "Email not found")
 		return
 	}
+	defer res.Close()
 	var id int
 	var pass string
 	err = res.Scan(&id, &pass)
@@ -399,11 +399,11 @@ func (app *App) AddBook(c *gin.Context) {
 		return
 	}
 	res, err = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
-	defer res.Close()
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error occured to DB")
 		return
 	}
+	defer res.Close()
 	res.Next()
 	var bid int
 	res.Scan(&bid)
@@ -414,9 +414,9 @@ func (app *App) AddBook(c *gin.Context) {
 		c.String(http.StatusConflict, "Couldn't record to DB")
 		return
 	}
+	app.DB.Exec("INSERT INTO newbook(book_id, time_added) VALUES($1, $2)", bid, time.Now())
 	for _, genre := range book.Genres {
 		app.DB.Exec("INSERT INTO book_genre(book_id, genre) VALUES($1, $2)", bid, genre)
-		app.DB.Exec("INSERT INTO newbook(book)id, time_added) VALUES($1, $2)", bid, time.Now())
 	}
 	for _, Author := range book.Authors {
 		res, err = app.DB.Query("SELECT author_id FROM authors WHERE name=$1", Author.Author)
