@@ -50,10 +50,19 @@ func HashPassword(password string) (string, error) {
 }
 
 func CheckCompatibility(arr1, arr2 []int) bool {
+	x := len(arr1)
+	if len(arr2) < x {
+		x = len(arr2)
+	}
+	x = x / 2
+	xount := 0
 	for _, val := range arr1 {
-		if !Exists(val, arr2) {
-			return false
+		if Exists(val, arr2) {
+			xount++
 		}
 	}
-	return true
+	if xount >= x && xount > 1 {
+		return true
+	}
+	return false
 }
