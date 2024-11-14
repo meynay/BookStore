@@ -18,8 +18,6 @@ import (
 	"github.com/meynay/BookStore/models"
 )
 
-const FP_GROWTH_ROUTE = "FP-Growth/rules.json"
-
 type App struct {
 	DB *sql.DB
 }
@@ -235,6 +233,7 @@ func (app *App) FaveOrUnfave(c *gin.Context) {
 }
 
 func (app *App) RecommendByRecord(c *gin.Context) {
+	FP_GROWTH_ROUTE := os.Getenv("FP_GROWTH_ROUTE")
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
 	if err != nil || !res.Next() {
