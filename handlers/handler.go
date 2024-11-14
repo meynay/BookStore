@@ -395,7 +395,46 @@ func (app *App) Signup(c *gin.Context) {
 
 func (app *App) RecommendByRates(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
-	c.String(http.StatusOK, fmt.Sprintf("Works for now %d", id))
+	req := fmt.Sprintf("http://localhost:9823/%d", id)
+	res, err := http.Get(req)
+	if err != nil {
+		fmt.Printf("error making http request: %s\n", err)
+		c.String(http.StatusBadRequest, "badone")
+		return
+	}
+	if res.StatusCode != http.StatusOK {
+		c.String(http.StatusBadRequest, "not enough books to classify")
+		return
+	}
+	resBody, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		c.String(http.StatusBadRequest, "couldn't read json body")
+		return
+	}
+	var bids []int
+	json.Unmarshal(resBody, &bids)
+	if len(bids) == 0 {
+		c.String(http.StatusNotFound, "No books found")
+		return
+	}
+	placeholders := []string{}
+	for i := range bids {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	res2, err := app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error getting books")
+		return
+	}
+	defer res2.Close()
+	books := []models.LowBook{}
+	for res2.Next() {
+		var book models.LowBook
+		res2.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price)
+		books = append(books, book)
+	}
+	c.JSON(http.StatusOK, books)
 }
 
 func (app *App) AddBook(c *gin.Context) {
