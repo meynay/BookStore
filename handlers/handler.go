@@ -103,8 +103,12 @@ func (app *App) GetNewBooks(c *gin.Context) {
 }
 
 func (app *App) GetBook(c *gin.Context) {
-	bid, _ := strconv.Atoi(c.Param("id"))
-	gotbooks, err := app.DB.Query("SELECT * FROM book WHERE book_id = $1", bid)
+	bid, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.String(http.StatusBadRequest, "Error getting book id")
+		return
+	}
+	gotbooks, err := app.DB.Query("SELECT book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib, avg_rate, rate_count FROM book WHERE book_id = $1", bid)
 	if err != nil || !gotbooks.Next() {
 		c.String(http.StatusNotFound, "Book not found!")
 	}
