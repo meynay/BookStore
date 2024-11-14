@@ -31,15 +31,6 @@ func GetUserId(token string) int {
 	return claims.Uid
 }
 
-func Exists(value int, arr []int) bool {
-	for _, val := range arr {
-		if value == val {
-			return true
-		}
-	}
-	return false
-}
-
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -47,6 +38,15 @@ func HashPassword(password string) (string, error) {
 	}
 	log.Println(string(hash))
 	return string(hash), nil
+}
+
+func Exists(value int, arr []int) bool {
+	for _, val := range arr {
+		if value == val {
+			return true
+		}
+	}
+	return false
 }
 
 func CheckCompatibility(arr1, arr2 []int) bool {
@@ -61,7 +61,7 @@ func CheckCompatibility(arr1, arr2 []int) bool {
 			xount++
 		}
 	}
-	if xount >= x && xount > 1 {
+	if xount >= x && xount >= 1 {
 		return true
 	}
 	return false

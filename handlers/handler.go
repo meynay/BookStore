@@ -237,11 +237,16 @@ func (app *App) FaveOrUnfave(c *gin.Context) {
 func (app *App) RecommendByRecord(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
-	if err != nil {
+	if err != nil || !res.Next() {
 		c.String(http.StatusNotFound, "No books read by user")
 		return
 	}
 	var bids []int
+	var bid int
+	if err := res.Scan(&bid); err != nil {
+		c.String(http.StatusConflict, "couldn't bind")
+	}
+	bids = append(bids, bid)
 	for res.Next() {
 		var bid int
 		if err := res.Scan(&bid); err != nil {
@@ -255,10 +260,12 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 	byteread, _ := ioutil.ReadAll(jsonfile)
 	json.Unmarshal(byteread, &all)
 	result := []int{}
+	resMap := make(map[int]struct{})
 	for i := range all {
 		if functions.CheckCompatibility(bids, all[i].Base) {
 			for _, number := range all[i].Res {
-				if !functions.Exists(number, result) {
+				if _, exists := resMap[number]; !exists {
+					resMap[number] = struct{}{}
 					result = append(result, number)
 				}
 			}
