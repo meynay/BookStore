@@ -9,6 +9,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func ConvertToInterfaceSlice(bids []int) []interface{} {
+	result := make([]interface{}, len(bids))
+	for i, v := range bids {
+		result[i] = v
+	}
+	return result
+}
+
 func CompareHashAndPassword(hashed, pass string) error {
 
 	return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(pass))

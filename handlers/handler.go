@@ -86,13 +86,19 @@ func (app *App) GetNewBooks(c *gin.Context) {
 		res.Scan(&bid, &t)
 		if time.Since(t) > time.Duration(720)*time.Hour {
 			app.DB.Exec("DELETE * FROM newbook WHERE book_id=$1", bid)
+		} else {
+			bids = append(bids, bid)
 		}
-		bids = append(bids, bid)
 	}
 	res.Close()
-	res, err = app.DB.Query("SELECT book_id, title, image_url, price FROM book WHERE book_id IN $1", bids)
+	placeholders := make([]string, len(bids))
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	for i := range bids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	}
+	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error gettinn books")
+		c.String(http.StatusBadRequest, "Error getting books")
 		return
 	}
 	defer res.Close()
