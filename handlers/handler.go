@@ -91,11 +91,11 @@ func (app *App) GetNewBooks(c *gin.Context) {
 		}
 	}
 	res.Close()
-	placeholders := make([]string, len(bids))
-	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	placeholders := []string{}
 	for i := range bids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
 	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error getting books")
