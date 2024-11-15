@@ -60,7 +60,7 @@ func main() {
 		engine.GET("/recommendbooksbyrate", app.RecommendByRates)
 		engine.POST("/addbook", app.AddBook)
 		engine.PUT("/editbook", app.EditBook)
-		engine.GET("/favecheck", app.CheckIfFaved)
+		engine.GET("/favecheck/:book_id", app.CheckIfFaved)
 		engine.POST("/fave", app.FaveOrUnfave)
 		engine.POST("/ratebook", app.RateBook)
 		engine.POST("/commentbook", app.CommentOnBook)
