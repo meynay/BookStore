@@ -22,6 +22,18 @@ type App struct {
 	DB *sql.DB
 }
 
+func (app *App) ApiKeyCheck() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		api_key := c.GetHeader("x-api-key")
+		API_KEY := os.Getenv("API_KEY")
+		if api_key == API_KEY {
+			c.Next()
+		} else {
+			c.AbortWithStatus(http.StatusForbidden)
+		}
+	}
+}
+
 func (app *App) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenValue := c.GetHeader("Authorization")
