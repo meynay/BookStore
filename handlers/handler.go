@@ -33,7 +33,7 @@ func (app *App) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
 		}
-		if tkn == nil || !tkn.Valid {
+		if tkn == nil || !tkn.Valid || functions.IsTokenBlacklisted(tokenValue) {
 			c.AbortWithStatus(http.StatusUnauthorized)
 		}
 		c.Next()
@@ -44,7 +44,7 @@ func (app *App) GetBooks(c *gin.Context) {
 	books := []models.LowBook{}
 	gotbooks, err := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
 	if err != nil {
-		c.String(http.StatusBadRequest, "couldn't get books")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	defer gotbooks.Close()
@@ -74,7 +74,7 @@ func (app *App) GetBooks(c *gin.Context) {
 func (app *App) GetNewBooks(c *gin.Context) {
 	res, err := app.DB.Query("SELECT * FROM newbook")
 	if err != nil {
-		c.String(http.StatusNotFound, "No new books found!")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	bids := []int{}
@@ -96,7 +96,7 @@ func (app *App) GetNewBooks(c *gin.Context) {
 	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
 	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error getting books")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -112,12 +112,12 @@ func (app *App) GetNewBooks(c *gin.Context) {
 func (app *App) GetBook(c *gin.Context) {
 	bid, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error getting book id")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	gotbooks, err := app.DB.Query("SELECT book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib, avg_rate, rate_count FROM book WHERE book_id = $1", bid)
 	if err != nil || !gotbooks.Next() {
-		c.String(http.StatusNotFound, "Book not found!")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	defer gotbooks.Close()
@@ -136,7 +136,7 @@ func (app *App) GetBook(c *gin.Context) {
 	var quantity_lib, rate_count int
 	var avg_rate float64
 	if err := gotbooks.Scan(&book_id, &title, &isbn, &image_url, &publication_date, &isbn13, &num_pages, &publisher, &book_format, &description, &price, &quantity_sale, &quantity_lib, &avg_rate, &rate_count); err != nil {
-		c.String(http.StatusForbidden, "Couldn't bind")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	} else {
 		genres := []string{}
@@ -202,12 +202,12 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	bid, err := strconv.Atoi(c.Param("book_id"))
 	if err != nil {
-		c.String(http.StatusBadRequest, "Incorrect book id")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
 	if err != nil || !res.Next() {
-		c.String(http.StatusNotFound, "Not added before")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	res.Close()
@@ -221,13 +221,13 @@ func (app *App) FaveOrUnfave(c *gin.Context) {
 	}
 	err := c.BindJSON(&js)
 	if err != nil {
-		c.String(http.StatusBadRequest, "couldn't bind json")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
 	log.Println(js.Id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -245,19 +245,19 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
 	if err != nil || !res.Next() {
-		c.String(http.StatusNotFound, "No books read by user")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	var bids []int
 	var bid int
 	if err := res.Scan(&bid); err != nil {
-		c.String(http.StatusConflict, "couldn't bind")
+		c.AbortWithStatus(http.StatusInternalServerError)
 	}
 	bids = append(bids, bid)
 	for res.Next() {
 		var bid int
 		if err := res.Scan(&bid); err != nil {
-			c.String(http.StatusConflict, "couldn't bind")
+			c.AbortWithStatus(http.StatusInternalServerError)
 		}
 		bids = append(bids, bid)
 	}
@@ -296,7 +296,7 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 		books := []models.LowBook{}
 		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url, rate_count, avg_rate FROM book WHERE book_id in %s", str))
 		if err != nil {
-			c.String(http.StatusConflict, "couldn't find books")
+			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
 		for res.Next() {
@@ -310,7 +310,7 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 	} else if len(result) == 1 {
 		res, err := app.DB.Query("SELECT title, book_id, price, image_url FROM book WHERE book_id=$1", result[0])
 		if err != nil {
-			c.String(http.StatusConflict, "couldn't find books")
+			c.String(http.StatusNotFound, "couldn't find books")
 			return
 		}
 		res.Next()
@@ -327,13 +327,13 @@ func (app *App) Login(c *gin.Context) {
 	user := models.UserLogin{}
 	err := c.BindJSON(&user)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Couldn't bind json file")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	user.Email = strings.ToLower(user.Email)
 	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
 	if err != nil || !res.Next() {
-		c.String(http.StatusNotFound, "Email not found")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	defer res.Close()
@@ -342,12 +342,12 @@ func (app *App) Login(c *gin.Context) {
 	err = res.Scan(&id, &pass)
 	log.Println(id, pass)
 	if err != nil {
-		c.String(http.StatusConflict, "Couldn't bind user")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	err = functions.CompareHashAndPassword(pass, user.Password)
 	if err != nil {
-		c.String(http.StatusNotAcceptable, "Wrong password")
+		c.AbortWithStatus(http.StatusNotAcceptable)
 		return
 	}
 	expirationTime := time.Now().Add(30 * time.Minute)
@@ -371,23 +371,34 @@ func (app *App) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, jwtOutput)
 }
 
+func (app *App) Logout(c *gin.Context) {
+	token := c.GetHeader("Authorization")
+	err := functions.BlacklistToken(token, time.Hour*24)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
+
 func (app *App) Signup(c *gin.Context) {
 	var user models.User
 	err := c.BindJSON(&user)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Couldn't bind user")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	user.Email = strings.ToLower(user.Email)
 	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
 	if res.Next() || err != nil {
-		c.String(http.StatusNotAcceptable, "Email or phone have already been used")
+		c.AbortWithStatus(http.StatusNotAcceptable)
 		return
 	}
 	res.Close()
 	user.Password, err = functions.HashPassword(user.Password)
 	if err != nil {
-		c.String(http.StatusConflict, "Password error")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	res, _ = app.DB.Query("SELECT user_id FROM users ORDER BY user_id DESC LIMIT 1")
@@ -407,22 +418,22 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	res, err := http.Get(req)
 	if err != nil {
 		fmt.Printf("error making http request: %s\n", err)
-		c.String(http.StatusBadRequest, "badone")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	if res.StatusCode != http.StatusOK {
-		c.String(http.StatusBadRequest, "not enough books to classify")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	resBody, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		c.String(http.StatusBadRequest, "couldn't read json body")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	var bids []int
 	json.Unmarshal(resBody, &bids)
 	if len(bids) == 0 {
-		c.String(http.StatusNotFound, "No books found")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	placeholders := []string{}
@@ -432,7 +443,7 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
 	res2, err := app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error getting books")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res2.Close()
@@ -449,26 +460,26 @@ func (app *App) AddBook(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	res.Next()
 	var b bool
 	res.Scan(&b)
 	if !b {
-		c.String(http.StatusBadRequest, "You cannot add book if you are not an admin!!")
+		c.AbortWithStatus(http.StatusNotAcceptable)
 		return
 	}
 	res.Close()
 	var book models.Book
 	err = c.BindJSON(&book)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error binding json")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	res, err = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -479,7 +490,7 @@ func (app *App) AddBook(c *gin.Context) {
 	book.Id = bid
 	_, err = app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib, avg_rate, rate_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib, book.AverageRate, book.RateCount)
 	if err != nil {
-		c.String(http.StatusConflict, "Couldn't record to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	app.DB.Exec("INSERT INTO newbook(book_id, time_added) VALUES($1, $2)", bid, time.Now())
@@ -510,7 +521,7 @@ func (app *App) EditBook(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -518,12 +529,12 @@ func (app *App) EditBook(c *gin.Context) {
 	var b bool
 	res.Scan(&b)
 	if !b {
-		c.String(http.StatusBadRequest, "You cannot add book if you are not an admin!!")
+		c.AbortWithStatus(http.StatusNotAcceptable)
 		return
 	}
 	var book models.Book
 	if err := c.BindJSON(&book); err != nil {
-		c.String(http.StatusBadRequest, "Cannot bind json")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
@@ -534,7 +545,7 @@ func (app *App) GetUserProfile(c *gin.Context) {
 	id := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -551,14 +562,14 @@ func (app *App) GetUserProfile(c *gin.Context) {
 func (app *App) FilterBooks(c *gin.Context) {
 	filters := models.Filter{}
 	if err := c.ShouldBindBodyWithJSON(&filters); err != nil {
-		c.String(http.StatusBadRequest, "Couldn't bind json")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	books := []models.Book{}
 	if len(filters.Genres) > 0 {
 		res, err := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
 		if err != nil {
-			c.String(http.StatusBadRequest, "Error occured to DB")
+			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		book_ids := []int{}
@@ -570,7 +581,7 @@ func (app *App) FilterBooks(c *gin.Context) {
 		res.Close()
 		res, err = app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in $1", book_ids)
 		if err != nil {
-			c.String(http.StatusBadRequest, "Error occured to DB")
+			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		for res.Next() {
@@ -582,7 +593,7 @@ func (app *App) FilterBooks(c *gin.Context) {
 	} else {
 		res, err := app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book")
 		if err != nil {
-			c.String(http.StatusBadRequest, "Error occured to DB")
+			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		for res.Next() {
@@ -606,7 +617,7 @@ func (app *App) FilterBooks(c *gin.Context) {
 		}
 	}
 	if len(books) == 0 {
-		c.String(http.StatusBadRequest, "No books found for given filters")
+		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 	returning := []models.LowBook{}
@@ -628,14 +639,14 @@ func (app *App) RateBook(c *gin.Context) {
 	var rate models.Rate
 	err := c.BindJSON(&rate)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error binding json")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	var rating int
 	var b bool = false
 	res, err := app.DB.Query("SELECT rating FROM user_rating WHERE user_id=$1 AND book_id=$2", uid, rate.Bid)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	if res.Next() {
@@ -645,13 +656,13 @@ func (app *App) RateBook(c *gin.Context) {
 	date_added := time.Now()
 	_, err = app.DB.Exec("INSERT INTO user_rating(user_id, book_id, rating, review, date_added) values($1, $2, $3, $4, $5)", uid, rate.Bid, rate.Rating, rate.Review, date_added)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	res.Close()
 	res, err = app.DB.Query("SELECT avg_rate, rate_count FROM book WHERE book_id=$1", rate.Bid)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Err occured")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -678,7 +689,7 @@ func (app *App) CommentOnBook(c *gin.Context) {
 	var rate models.Rate
 	err := c.BindJSON(&rate)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error binding json")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	app.DB.Exec("INSERT INTO comment(book_id, user_id, review, date_added) values($1, $2, $3, $4)", rate.Bid, uid, rate.Review, time.Now())
@@ -689,7 +700,7 @@ func (app *App) GetComments(c *gin.Context) {
 	book_id, _ := strconv.Atoi(c.Param("book_id"))
 	res, err := app.DB.Query("SELECT (firstname || ' ' || lastname) as name, review FROM comment INNER JOIN users ON comment.user_id=users.user_id WHERE comment.book_id=$1", book_id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured to DB")
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer res.Close()
@@ -697,7 +708,7 @@ func (app *App) GetComments(c *gin.Context) {
 	for res.Next() {
 		comment := models.UserComment{}
 		if err := res.Scan(&comment.Name, &comment.Comment); err != nil {
-			c.String(http.StatusInternalServerError, "Couldn't find comments on this book")
+			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		comments = append(comments, comment)
@@ -712,7 +723,7 @@ func (app *App) GetRates(c *gin.Context) {
 	book_id, _ := strconv.Atoi(c.Param("book_id"))
 	res, err := app.DB.Query("SELECT (firstname || ' ' || lastname) as name, review, rating FROM user_rating INNER JOIN users ON user_rating.user_id=users.user_id WHERE user_rating.book_id=$1", book_id)
 	if err != nil {
-		c.String(http.StatusBadRequest, "Error occured")
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	defer res.Close()
@@ -720,7 +731,7 @@ func (app *App) GetRates(c *gin.Context) {
 	for res.Next() {
 		comment := models.UserComment{}
 		if err := res.Scan(&comment.Name, &comment.Comment, &comment.Rate); err != nil {
-			c.String(http.StatusInternalServerError, "Couldn't find comments on this book")
+			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		comments = append(comments, comment)
@@ -729,4 +740,40 @@ func (app *App) GetRates(c *gin.Context) {
 		c.String(http.StatusNotFound, "No comments found")
 	}
 	c.JSON(http.StatusOK, comments)
+}
+
+func (app *App) GetFavedBooks(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT book_id FROM user_fave WHERE user_id=$1", uid)
+	if err != nil || !res.Next() {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	bids := []int{}
+	var bid int
+	res.Scan(&bid)
+	bids = append(bids, bid)
+	for res.Next() {
+		var bid int
+		res.Scan(&bid)
+		bids = append(bids, bid)
+	}
+	placeholders := []string{}
+	for i := range bids {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer res.Close()
+	books := []models.LowBook{}
+	for res.Next() {
+		var book models.LowBook
+		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
+		books = append(books, book)
+	}
+	c.JSON(http.StatusOK, books)
 }

@@ -64,6 +64,8 @@ func main() {
 		engine.POST("/fave", app.FaveOrUnfave)
 		engine.POST("/ratebook", app.RateBook)
 		engine.POST("/commentbook", app.CommentOnBook)
+		engine.GET("/getfavebooks", app.GetFavedBooks)
+		engine.POST("/logout", app.Logout)
 	}
 	port := os.Getenv("PORT")
 	host := os.Getenv("HOST")

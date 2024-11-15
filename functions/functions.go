@@ -1,13 +1,33 @@
 package functions
 
 import (
+	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/go-redis/redis/v8"
 	"github.com/meynay/BookStore/models"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var Redis_Host = os.Getenv("REDIS_HOST")
+var Redis_Port = os.Getenv("REDIS_PORT")
+
+var ctx = context.Background()
+var redisClient = redis.NewClient(&redis.Options{
+	Addr: Redis_Host + Redis_Port,
+})
+
+func BlacklistToken(token string, expiry time.Duration) error {
+	return redisClient.Set(ctx, token, "blacklisted", expiry).Err()
+}
+
+func IsTokenBlacklisted(token string) bool {
+	result, err := redisClient.Get(ctx, token).Result()
+	return err == nil && result == "blacklisted"
+}
 
 func ConvertToInterfaceSlice(bids []int) []interface{} {
 	result := make([]interface{}, len(bids))
