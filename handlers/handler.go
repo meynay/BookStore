@@ -200,7 +200,11 @@ func (app *App) GetBook(c *gin.Context) {
 
 func (app *App) CheckIfFaved(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	bid := c.Param("book_id")
+	var js struct {
+		Id int `json:"book_id"`
+	}
+	c.BindJSON(&js)
+	bid := js.Id
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
 	if err != nil || !res.Next() {
 		c.String(http.StatusNotAcceptable, "Not added before")
