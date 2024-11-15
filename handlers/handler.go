@@ -203,7 +203,11 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 	var js struct {
 		Id int `json:"book_id"`
 	}
-	c.BindJSON(&js)
+	err := c.BindJSON(&js)
+	if err != nil {
+		c.String(http.StatusBadRequest, "couldn't bind json")
+		return
+	}
 	bid := js.Id
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
 	if err != nil || !res.Next() {
@@ -219,7 +223,11 @@ func (app *App) FaveOrUnfave(c *gin.Context) {
 	var js struct {
 		Id int `json:"book_id"`
 	}
-	c.BindJSON(&js)
+	err := c.BindJSON(&js)
+	if err != nil {
+		c.String(http.StatusBadRequest, "couldn't bind json")
+		return
+	}
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
 	log.Println(js.Id)
 	if err != nil {
