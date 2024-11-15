@@ -93,7 +93,7 @@ func (app *App) GetNewBooks(c *gin.Context) {
 	for i := range bids {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
-	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
 	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error getting books")
@@ -103,7 +103,7 @@ func (app *App) GetNewBooks(c *gin.Context) {
 	books := []models.LowBook{}
 	for res.Next() {
 		var book models.LowBook
-		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price)
+		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
 		books = append(books, book)
 	}
 	c.JSON(http.StatusOK, books)
@@ -286,14 +286,14 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 		}
 		str += ")"
 		books := []models.LowBook{}
-		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url FROM book WHERE book_id in %s", str))
+		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url, rate_count, avg_rate FROM book WHERE book_id in %s", str))
 		if err != nil {
 			c.String(http.StatusConflict, "couldn't find books")
 			return
 		}
 		for res.Next() {
 			var book models.LowBook
-			res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl)
+			res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl, &book.Count, &book.Rate)
 			books = append(books, book)
 		}
 		res.Close()
@@ -421,7 +421,7 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	for i := range bids {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
-	query := fmt.Sprintf("SELECT book_id, title, image_url, price FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
 	res2, err := app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Error getting books")
@@ -431,7 +431,7 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	books := []models.LowBook{}
 	for res2.Next() {
 		var book models.LowBook
-		res2.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price)
+		res2.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
 		books = append(books, book)
 	}
 	c.JSON(http.StatusOK, books)
@@ -641,7 +641,7 @@ func (app *App) RateBook(c *gin.Context) {
 		return
 	}
 	res.Close()
-	res, err = app.DB.Query("SELECT avg_rate, rate_count FROM book WHERE book_id=$1")
+	res, err = app.DB.Query("SELECT avg_rate, rate_count FROM book WHERE book_id=$1", rate.Bid)
 	if err != nil {
 		c.String(http.StatusBadRequest, "Err occured")
 		return
