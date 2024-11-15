@@ -207,11 +207,11 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 	bid := js.Id
 	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", bid, uid)
 	if err != nil || !res.Next() {
-		c.String(http.StatusNotAcceptable, "Not added before")
+		c.String(http.StatusNotFound, "Not added before")
 		return
 	}
 	res.Close()
-	c.String(http.StatusAccepted, "Added before")
+	c.String(http.StatusOK, "Added before")
 }
 
 func (app *App) FaveOrUnfave(c *gin.Context) {
@@ -229,11 +229,11 @@ func (app *App) FaveOrUnfave(c *gin.Context) {
 	defer res.Close()
 	if !res.Next() {
 		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", js.Id, uid)
-		c.String(http.StatusAccepted, "Book added to faves")
+		c.String(http.StatusOK, "Book added to faves")
 		return
 	}
 	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
-	c.String(http.StatusAccepted, "Book deleted from faves")
+	c.String(http.StatusOK, "Book deleted from faves")
 }
 
 func (app *App) RecommendByRecord(c *gin.Context) {
@@ -537,7 +537,7 @@ func (app *App) GetUserProfile(c *gin.Context) {
 	res.Next()
 	var fname, lname, image string
 	res.Scan(&fname, &lname, &image)
-	c.JSON(http.StatusAccepted, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"firstname": fname,
 		"lastname":  lname,
 		"image":     image,
@@ -616,7 +616,7 @@ func (app *App) FilterBooks(c *gin.Context) {
 			Price:    book.Price,
 		})
 	}
-	c.JSON(http.StatusAccepted, returning)
+	c.JSON(http.StatusOK, returning)
 }
 
 func (app *App) RateBook(c *gin.Context) {
