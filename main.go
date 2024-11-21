@@ -37,7 +37,7 @@ func main() {
 	app := handlers.App{
 		DB: getDB(),
 		Email: models.EmailConfig{
-			SMTPHost:    "smtp.mailgun.org",
+			SMTPHost:    "smtp.gmail.com",
 			SMTPPort:    587,
 			Username:    os.Getenv("SMTP_USERNAME"),
 			Password:    os.Getenv("SMTP_PASSWORD"),
@@ -57,7 +57,7 @@ func main() {
 	engine.Use(app.ApiKeyCheck())
 	{
 		engine.GET("/getbooks", app.GetBooks)
-		engine.POST("/resetpassword", app.ResetPassword)
+		engine.POST("/resetpassword", app.ResetPasswordMail)
 		engine.GET("/getbook/:id", app.GetBook)
 		engine.GET("/newbooks", app.GetNewBooks)
 		engine.GET("/filterbooks", app.FilterBooks)
@@ -65,6 +65,7 @@ func main() {
 		engine.POST("/signup", app.Signup)
 		engine.GET("/rates/:book_id", app.GetRates)
 		engine.GET("/comments/:book_id", app.GetComments)
+		engine.POST("/resetpass/:token", app.ResetPassword)
 		engine.Use(app.AuthMiddleware())
 		{
 			engine.GET("/userinfo", app.GetUserInfo)

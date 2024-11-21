@@ -424,6 +424,12 @@ func (app *App) Signup(c *gin.Context) {
 	user.Role = false
 	user.Image = "tempo"
 	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
+	subject := "Reset Password"
+	body := fmt.Sprintf(`
+		<h1>Welcome %s %s<h1>
+        <p>We're glad that you decided to use our service. Hope you can find what you seek in our web app</p>
+    `, user.Firstname, user.Lastname)
+	functions.SendEmail(user.Email, subject, body, app.Email)
 	c.String(http.StatusOK, "Signup successful")
 }
 
@@ -847,7 +853,7 @@ func (app *App) UploadImage(c *gin.Context) {
 	c.String(http.StatusOK, "Image added successfully")
 }
 
-func (app *App) ResetPassword(c *gin.Context) {
+func (app *App) ResetPasswordMail(c *gin.Context) {
 	var request struct {
 		Email string `json:"email" binding:"required,email"`
 	}
@@ -879,4 +885,32 @@ func (app *App) ResetPassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"Message": "Reset Password Email sent"})
+}
+
+func (app *App) ResetPassword(c *gin.Context) {
+	token := c.Param("token")
+	email, ok := app.ResetToken[token]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"Error": "Invalid token"})
+		return
+	}
+	var pass struct {
+		Pass string `json:"password"`
+	}
+	err := c.ShouldBind(&pass)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"Error": "Bad JSON format"})
+		return
+	}
+	password, err := functions.HashPassword(pass.Pass)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	_, err = app.DB.Exec("UPDATE users SET password=$1 WHERE email=$2", password, email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"Message": "Password changed successfully"})
 }
