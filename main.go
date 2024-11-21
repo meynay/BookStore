@@ -57,9 +57,12 @@ func main() {
 		engine.GET("/comments/:book_id", app.GetComments)
 		engine.Use(app.AuthMiddleware())
 		{
+			engine.GET("/userinfo", app.GetUserInfo)
 			engine.GET("/userprofile", app.GetUserProfile)
+			engine.GET("/image/:image", app.GetProfPic)
 			engine.GET("/recommendbooksbyrecord", app.RecommendByRecord)
 			engine.GET("/recommendbooksbyrate", app.RecommendByRates)
+			engine.POST("/userimageupload", app.UploadImage)
 			engine.POST("/addbook", app.AddBook)
 			engine.PUT("/editbook", app.EditBook)
 			engine.GET("/favecheck/:book_id", app.CheckIfFaved)

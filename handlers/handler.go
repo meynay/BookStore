@@ -420,6 +420,7 @@ func (app *App) Signup(c *gin.Context) {
 	res.Scan(&id)
 	user.Id = id + 1
 	user.Role = false
+	user.Image = "tempo"
 	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
 	c.String(http.StatusOK, "Signup successful")
 }
@@ -564,11 +565,20 @@ func (app *App) GetUserProfile(c *gin.Context) {
 	res.Next()
 	var fname, lname, image string
 	res.Scan(&fname, &lname, &image)
+	if image == "tempo" {
+		image = ""
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"firstname": fname,
 		"lastname":  lname,
 		"image":     image,
 	})
+}
+
+func (apap *App) GetProfPic(c *gin.Context) {
+	fname := c.Param("image")
+	fdir := os.Getenv("FILE_DIR")
+	c.File(fdir + "/" + fname)
 }
 
 func (app *App) FilterBooks(c *gin.Context) {
@@ -788,4 +798,49 @@ func (app *App) GetFavedBooks(c *gin.Context) {
 		books = append(books, book)
 	}
 	c.JSON(http.StatusOK, books)
+}
+
+func (app *App) GetUserInfo(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT firstname, lastname, email, phone, image, role FROM users WHERE user_id=$1", uid)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	res.Next()
+	var user models.User
+	if err = res.Scan(&user.Firstname, &user.Lastname, &user.Email, &user.Phone, &user.Image, &user.Role); err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, user)
+	return
+}
+
+func (app *App) UploadImage(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	fileDir := os.Getenv("FILE_DIR")
+	res, _ := app.DB.Query("SELECT image from users WHERE user_id=$1", uid)
+	var img string
+	res.Scan(&img)
+	if img != "tempo" {
+		os.Remove(fmt.Sprintf("%s/%s", fileDir, img))
+	}
+	img = fmt.Sprintf("%d_%s", uid, file.Filename)
+	err = c.SaveUploadedFile(file, fmt.Sprintf("%s/%s", fileDir, img))
+	if err != nil {
+		log.Println(err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	_, err = app.DB.Exec("UPDATE users SET image=$1 WHERE user_id=$2", img, uid)
+	if err != nil {
+		log.Println(err)
+	}
+	c.String(http.StatusOK, "Image added successfully")
 }
