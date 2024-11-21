@@ -91,3 +91,11 @@ type FPG struct {
 	Base []int `json:"base"`
 	Res  []int `json:"result"`
 }
+
+type EmailConfig struct {
+	SMTPHost    string
+	SMTPPort    int
+	Username    string
+	Password    string
+	SenderEmail string
+}

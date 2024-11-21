@@ -2,6 +2,9 @@ package functions
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/meynay/BookStore/models"
 	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/gomail.v2"
 )
 
 var Redis_Host = os.Getenv("REDIS_HOST")
@@ -85,4 +89,39 @@ func CheckCompatibility(arr1, arr2 []int) bool {
 		return true
 	}
 	return false
+}
+
+func SendEmail(to, subject, body string, config models.EmailConfig) error {
+	m := gomail.NewMessage()
+	m.SetHeader("From", config.SenderEmail)
+	m.SetHeader("To", to)
+	m.SetHeader("Subject", subject)
+	m.SetBody("text/html", body)
+	log.Println(fmt.Sprintf("Sending mail to %s From %s Subject is %s", to, config.SenderEmail, subject))
+	d := gomail.NewDialer(config.SMTPHost, config.SMTPPort, config.Username, config.Password)
+	if err := d.DialAndSend(m); err != nil {
+		return fmt.Errorf("failed to send email: %w", err)
+	}
+	return nil
+}
+
+func GenerateToken() (string, error) {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func SendResetPassEmail(email, token string, config models.EmailConfig) error {
+	resetLink := fmt.Sprintf("https://bikaransystem.work.gd/reset-password?token=%s", token)
+	subject := "Reset Password"
+	body := fmt.Sprintf(`
+        <p>We received a request to reset your password.</p>
+        <p>Click the link below to reset it:</p>
+        <a href="%s">Reset Password</a>
+        <p>If you didn't request this, please ignore this email.</p>
+    `, resetLink)
+	return SendEmail(email, subject, body, config)
 }

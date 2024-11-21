@@ -12,13 +12,10 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/meynay/BookStore/handlers"
+	"github.com/meynay/BookStore/models"
 )
 
 func getDB() *sql.DB {
-	err := godotenv.Load()
-	if err != nil {
-		fmt.Println("Error loading .env file")
-	}
 	port := os.Getenv("DB_PORT")
 	database := os.Getenv("DB_DB")
 	user := os.Getenv("DB_USER")
@@ -33,8 +30,20 @@ func getDB() *sql.DB {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("Error loading .env file")
+	}
 	app := handlers.App{
 		DB: getDB(),
+		Email: models.EmailConfig{
+			SMTPHost:    "smtp.mailgun.org",
+			SMTPPort:    587,
+			Username:    os.Getenv("SMTP_USERNAME"),
+			Password:    os.Getenv("SMTP_PASSWORD"),
+			SenderEmail: os.Getenv("SMTP_USERNAME"),
+		},
+		ResetToken: make(map[string]string),
 	}
 	engine := gin.Default()
 	engine.Use(cors.New(cors.Config{
@@ -48,6 +57,7 @@ func main() {
 	engine.Use(app.ApiKeyCheck())
 	{
 		engine.GET("/getbooks", app.GetBooks)
+		engine.POST("/resetpassword", app.ResetPassword)
 		engine.GET("/getbook/:id", app.GetBook)
 		engine.GET("/newbooks", app.GetNewBooks)
 		engine.GET("/filterbooks", app.FilterBooks)
