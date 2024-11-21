@@ -424,7 +424,7 @@ func (app *App) Signup(c *gin.Context) {
 	user.Role = false
 	user.Image = "tempo"
 	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
-	subject := "Reset Password"
+	subject := "Bookstore sign up"
 	body := fmt.Sprintf(`
 		<h1>Welcome %s %s<h1>
         <p>We're glad that you decided to use our service. Hope you can find what you seek in our web app</p>
