@@ -714,6 +714,65 @@ func (app *App) RateBook(c *gin.Context) {
 	c.String(http.StatusOK, "Rate added")
 }
 
+func (app *App) ReadBooks(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusNotFound, gin.H{"Error": "No books found for user"})
+		return
+	}
+	ids := []int{}
+	var id int
+	res.Scan(&id)
+	ids = append(ids, id)
+	for res.Next() {
+		res.Scan(&id)
+		ids = append(ids, id)
+	}
+	placeholders := []string{}
+	for i := range ids {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(ids)...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	books := []models.LowBook{}
+	for res.Next() {
+		var book models.LowBook
+		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
+	}
+	c.JSON(http.StatusOK, books)
+}
+
+func (app *App) ReadBook(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	app.DB.Exec("INSERT INTO user_read(book_id, userid) VALUES($1, $2)", bid, uid)
+	c.JSON(http.StatusOK, gin.H{"Message": "Book added to read list"})
+}
+
+func (app *App) IsBookRead(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	res, err := app.DB.Query("SELECT * FROM user_read WHERE userid = $1 AND book_id = $2", uid, bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusNotFound, gin.H{"Message": "User has not read this book"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"Message": "User has read this book"})
+}
+
 func (app *App) CommentOnBook(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	var rate models.Rate
@@ -822,7 +881,6 @@ func (app *App) GetUserInfo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, user)
-	return
 }
 
 func (app *App) UploadImage(c *gin.Context) {
