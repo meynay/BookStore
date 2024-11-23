@@ -68,6 +68,9 @@ func main() {
 		engine.POST("/resetpass/:token", app.ResetPassword)
 		engine.Use(app.AuthMiddleware())
 		{
+			engine.GET("/isread/:bookid", app.IsBookRead)
+			engine.POST("/readbook/:bookid", app.ReadBook)
+			engine.GET("/readbooks", app.ReadBooks)
 			engine.GET("/userinfo", app.GetUserInfo)
 			engine.GET("/userprofile", app.GetUserProfile)
 			engine.GET("/image/:image", app.GetProfPic)
