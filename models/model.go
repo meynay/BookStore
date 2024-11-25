@@ -42,6 +42,12 @@ type LowBook struct {
 	Count    int     `json:"rates_count"`
 }
 
+type BorrowedBook struct {
+	Book       LowBook   `json:"book"`
+	Returned   bool      `json:"returned"`
+	BorrowTime time.Time `json:"boorow_time"`
+}
+
 type UserLogin struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

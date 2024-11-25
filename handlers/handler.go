@@ -22,6 +22,7 @@ type App struct {
 	DB         *sql.DB
 	Email      models.EmailConfig
 	ResetToken map[string]string
+	GetSignal  map[int]chan (bool)
 }
 
 func (app *App) ApiKeyCheck() gin.HandlerFunc {
@@ -714,65 +715,6 @@ func (app *App) RateBook(c *gin.Context) {
 	c.String(http.StatusOK, "Rate added")
 }
 
-func (app *App) ReadBooks(c *gin.Context) {
-	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", uid)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	if !res.Next() {
-		c.JSON(http.StatusNotFound, gin.H{"Error": "No books found for user"})
-		return
-	}
-	ids := []int{}
-	var id int
-	res.Scan(&id)
-	ids = append(ids, id)
-	for res.Next() {
-		res.Scan(&id)
-		ids = append(ids, id)
-	}
-	placeholders := []string{}
-	for i := range ids {
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-	}
-	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
-	res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(ids)...)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	books := []models.LowBook{}
-	for res.Next() {
-		var book models.LowBook
-		res.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
-	}
-	c.JSON(http.StatusOK, books)
-}
-
-func (app *App) ReadBook(c *gin.Context) {
-	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	bid, _ := strconv.Atoi(c.Param("bookid"))
-	app.DB.Exec("INSERT INTO user_read(book_id, userid) VALUES($1, $2)", bid, uid)
-	c.JSON(http.StatusOK, gin.H{"Message": "Book added to read list"})
-}
-
-func (app *App) IsBookRead(c *gin.Context) {
-	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	bid, _ := strconv.Atoi(c.Param("bookid"))
-	res, err := app.DB.Query("SELECT * FROM user_read WHERE userid = $1 AND book_id = $2", uid, bid)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	if !res.Next() {
-		c.JSON(http.StatusNotFound, gin.H{"Message": "User has not read this book"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"Message": "User has read this book"})
-}
-
 func (app *App) CommentOnBook(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	var rate models.Rate
@@ -971,4 +913,132 @@ func (app *App) ResetPassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"Message": "Password changed successfully"})
+}
+
+func (app *App) AddToCart(c *gin.Context) {}
+
+func (app *App) GetLibStatus(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	res, err := app.DB.Query("SELECT * FROM borrow_book WHERE book_id = $1 AND returned = 'no'", bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusOK, gin.H{"message": "you can borrow"})
+		return
+	}
+	c.JSON(http.StatusNotAcceptable, gin.H{"message": "can't borrow book"})
+}
+
+func (app *App) BorrowBook(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT * FROM borrow_book WHERE user_id=$1 and resturned='no'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if res.Next() {
+		c.JSON(http.StatusNotAcceptable, gin.H{"message": "user still haven't returned last borrowed book"})
+		return
+	}
+	_, err = app.DB.Exec("INSERT INTO borrow_book(book_id, user_id, returned, borrow_time), values($1, $2, 'no', $3)", bid, uid, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	res, _ = app.DB.Query("SELECT title FROM book WHERE book_id = $1", bid)
+	res.Next()
+	var title, email, name string
+	res.Scan(&title)
+	subject := "امانت کتاب"
+	body := fmt.Sprintf(`<p>کتاب %s با موفقیت امانت گرفته شد</p>
+	<p>برای دریافت کتاب به کتابخانه مراجعه کنید و با ارائه کارت خود کتاب را تحویل بگیرید.</p>`, title)
+	res, _ = app.DB.Query("SELECT email, (firstname || ' ' || lastname) as name FROM users WHERE user_id=$1", uid)
+	res.Next()
+	res.Scan(&email, &name)
+	functions.SendEmail(email, subject, body, app.Email)
+	app.DB.Exec("INSERT INTO user_read(book_id, userid) VALUES($1, $2)", bid, uid)
+	c.JSON(http.StatusOK, gin.H{"message": "book borrowed successfully"})
+	app.GetSignal[bid] = make(chan bool)
+	go func() {
+		select {
+		case <-time.After(7 * time.Hour * 24):
+			subject := "سررسید تحویل کتاب"
+			body := fmt.Sprintf(`<p>سلام %s عزیز</p>
+			<p>وقت تحویل کتاب %s فرارسیده. ممنون میشیم به موقع کتاب رو به کتاب خونه برگردونی!</p>`, name, title)
+			functions.SendEmail(email, subject, body, app.Email)
+		case <-app.GetSignal[bid]:
+			return
+		}
+	}()
+}
+
+func (app *App) ReturnBook(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	res.Close()
+	_, err = app.DB.Query("UPDATE borrow_book SET returned='yes' WHERE book_id=$1 AND returned = 'no'", bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	app.GetSignal[bid] <- true
+	c.JSON(http.StatusOK, gin.H{"message": "book returned successfully"})
+}
+
+func (app *App) BorrowHistory(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT book_id, title, image_url, avg_rate, rate_count, borrow_time, returned FROM borrow_book INNER JOIN book ON borrow_book.book_id = book.book_id WHERE user_id = $1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	books := functions.GetBorrowedBooks(res)
+	if len(books) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no books found for user"})
+		return
+	}
+	c.JSON(http.StatusOK, books)
+}
+
+func (app *App) ShowActiveBorrows(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	res.Close()
+	res, err = app.DB.Query("SELECT book_id, title, image_url, avg_rate, rate_count, borrow_time, returned FROM borrow_book INNER JOIN book ON borrow_book.book_id = book.book_id WHERE returned='no'")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	books := functions.GetBorrowedBooks(res)
+	if len(books) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no active borrows"})
+		return
+	}
+	c.JSON(http.StatusOK, books)
 }

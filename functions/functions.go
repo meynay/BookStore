@@ -3,6 +3,7 @@ package functions
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -116,12 +117,22 @@ func GenerateToken() (string, error) {
 
 func SendResetPassEmail(email, token string, config models.EmailConfig) error {
 	resetLink := fmt.Sprintf("https://bikaransystem.work.gd/reset-password?token=%s", token)
-	subject := "Reset Password"
+	subject := "بازیابی رمز عبور"
 	body := fmt.Sprintf(`
-        <p>We received a request to reset your password.</p>
-        <p>Click the link below to reset it:</p>
-        <a href="%s">Reset Password</a>
-        <p>If you didn't request this, please ignore this email.</p>
+        <p>ما یک درخواست برای بازیابی رمز عبور دریافت کردیم</p>
+        <p>برای بازیابی رمز عبور خود برروی لینک زیر کلیک کنید</p>
+        <a href="%s">بازیابی رمز عبور</a>
+        <p>اگر این درخواست توسط شما ثبت نشده است، به این ایمیل توجه نکنید!</p>
     `, resetLink)
 	return SendEmail(email, subject, body, config)
+}
+
+func GetBorrowedBooks(result *sql.Rows) []models.BorrowedBook {
+	books := []models.BorrowedBook{}
+	for result.Next() {
+		var book models.BorrowedBook
+		result.Scan(&book.Book.Id, &book.Book.Title, &book.Book.ImageUrl, &book.Book.Rate, &book.Book.Count, &book.BorrowTime, &book.Returned)
+		books = append(books, book)
+	}
+	return books
 }

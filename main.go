@@ -49,42 +49,65 @@ func main() {
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"}, // Change to your domain
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "x-api-key"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 	engine.Use(app.ApiKeyCheck())
 	{
-		engine.GET("/getbooks", app.GetBooks)
-		engine.POST("/resetpassword", app.ResetPasswordMail)
-		engine.GET("/getbook/:id", app.GetBook)
-		engine.GET("/newbooks", app.GetNewBooks)
-		engine.GET("/filterbooks", app.FilterBooks)
+		//user sign in/up apis
 		engine.POST("/login", app.Login)
 		engine.POST("/signup", app.Signup)
+
+		//reset password apis
+		engine.POST("/tryresetpassword", app.ResetPasswordMail)
+		engine.POST("/resetpassword/:token", app.ResetPassword)
+
+		//get books apis
+		engine.GET("/getbooks", app.GetBooks)
+		engine.GET("/newbooks", app.GetNewBooks)
+		engine.GET("/filterbooks", app.FilterBooks)
+
+		//single book apis
+		engine.GET("/getbook/:id", app.GetBook)
 		engine.GET("/rates/:book_id", app.GetRates)
 		engine.GET("/comments/:book_id", app.GetComments)
-		engine.POST("/resetpass/:token", app.ResetPassword)
+
 		engine.Use(app.AuthMiddleware())
 		{
-			engine.GET("/isread/:bookid", app.IsBookRead)
-			engine.POST("/readbook/:bookid", app.ReadBook)
-			engine.GET("/readbooks", app.ReadBooks)
+			//user profile apis
 			engine.GET("/userinfo", app.GetUserInfo)
 			engine.GET("/userprofile", app.GetUserProfile)
 			engine.GET("/image/:image", app.GetProfPic)
+			engine.POST("/userimageupload", app.UploadImage)
+
+			//recommenders apis
 			engine.GET("/recommendbooksbyrecord", app.RecommendByRecord)
 			engine.GET("/recommendbooksbyrate", app.RecommendByRates)
-			engine.POST("/userimageupload", app.UploadImage)
-			engine.POST("/addbook", app.AddBook)
-			engine.PUT("/editbook", app.EditBook)
+
+			//user actions on books apis
 			engine.GET("/favecheck/:book_id", app.CheckIfFaved)
 			engine.POST("/fave", app.FaveOrUnfave)
 			engine.POST("/ratebook", app.RateBook)
 			engine.POST("/commentbook", app.CommentOnBook)
 			engine.GET("/getfavebooks", app.GetFavedBooks)
+
+			//borrow book apis
+			engine.GET("/libstatus/:bookid", app.GetLibStatus)
+			engine.POST("/borrowbook/:bookid", app.BorrowBook)
+			engine.GET("/borrowhistory", app.BorrowHistory)
+
+			//logout api
 			engine.POST("/logout", app.Logout)
+
+			//administrative apis
+			engine.GET("/borrowedbooks", app.ShowActiveBorrows)
+			engine.POST("/returnbook/:bookid", app.ReturnBook)
+			//book changes apis
+			engine.POST("/addbook", app.AddBook)
+			engine.PUT("/editbook", app.EditBook)
+
 		}
 	}
 	port := os.Getenv("PORT")
