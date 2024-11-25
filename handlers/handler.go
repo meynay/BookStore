@@ -258,7 +258,12 @@ func (app *App) FilterBooks(c *gin.Context) {
 			book_ids = append(book_ids, id)
 		}
 		res.Close()
-		res, err = app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in $1", book_ids)
+		placeholders = []string{}
+		for i := range book_ids {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		}
+		query = fmt.Sprintf("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in (%s)", strings.Join(placeholders, ", "))
+		res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(book_ids)...)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 			return
