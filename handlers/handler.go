@@ -233,7 +233,7 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 
 func (app *App) FilterBooks(c *gin.Context) {
 	filters := models.Filter{}
-	if err := c.ShouldBindBodyWithJSON(&filters); err != nil {
+	if err := c.BindJSON(&filters); err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
@@ -1172,6 +1172,12 @@ func (app *App) FinalizeInvoice(c *gin.Context) {
 	var iid int
 	res.Scan(&iid)
 	app.DB.Exec("UPDATE invoice SET status='close', purchase_date=$2 WHERE invocie_id=$1", iid, time.Now())
+	res, _ = app.DB.Query("SELECT book_id FROM invoice_book WHERE invoice_id=$1", iid)
+	for res.Next() {
+		var bid int
+		res.Scan(&bid)
+		app.DB.Exec("INSERT INTO user_read(userid, book_id) VALUES($1, $2)", uid, bid)
+	}
 	link := fmt.Sprintf("https://bikaransystem.work.gd/invoice/%d", iid)
 	subject := "سفارش شما تکمیل شد"
 	body := fmt.Sprintf(`<p>سفارش شما به شماره %d تکمیل شد</p>
