@@ -67,7 +67,7 @@ func main() {
 		//get books apis
 		engine.GET("/getbooks", app.GetBooks)
 		engine.GET("/newbooks", app.GetNewBooks)
-		engine.GET("/filterbooks", app.FilterBooks)
+		engine.POST("/filterbooks", app.FilterBooks)
 
 		//single book apis
 		engine.GET("/getbook/:id", app.GetBook)

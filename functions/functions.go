@@ -42,6 +42,14 @@ func ConvertToInterfaceSlice(bids []int) []interface{} {
 	return result
 }
 
+func ConvertToInterfaceSlices(str []string) []interface{} {
+	result := make([]interface{}, len(str))
+	for i, v := range str {
+		result[i] = v
+	}
+	return result
+}
+
 func CompareHashAndPassword(hashed, pass string) error {
 
 	return bcrypt.CompareHashAndPassword([]byte(hashed), []byte(pass))

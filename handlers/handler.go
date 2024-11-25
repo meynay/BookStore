@@ -241,7 +241,12 @@ func (app *App) FilterBooks(c *gin.Context) {
 	enddate := time.Date(filters.EndDate, 12, 30, 23, 59, 59, 0, time.UTC)
 	books := []models.Book{}
 	if len(filters.Genres) > 0 {
-		res, err := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
+		placeholders := []string{}
+		for i := range filters.Genres {
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		}
+		query := fmt.Sprintf("SELECT book_id FROM book_genre WHERE genre in (%s)", strings.Join(placeholders, ", "))
+		res, err := app.DB.Query(query, functions.ConvertToInterfaceSlices(filters.Genres)...)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 			return
