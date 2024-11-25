@@ -98,16 +98,25 @@ func main() {
 			engine.POST("/borrowbook/:bookid", app.BorrowBook)
 			engine.GET("/borrowhistory", app.BorrowHistory)
 
+			//buy books
+			engine.POST("/addtocart/:bookid", app.AddToCart)
+			engine.DELETE("/deletefromcart/:bookid", app.DeleteFromCart)
+			engine.GET("/incart/:bookid", app.IsInCart)
+			engine.GET("/activeinvoice", app.GetActiveInvoice)
+			engine.POST("/finalizeinvoice", app.FinalizeInvoice)
+			engine.GET("/showinvoice/:invoice", app.ShowInvoice)
+			engine.GET("/invoicehistory", app.InvoiceHistory)
+
 			//logout api
 			engine.POST("/logout", app.Logout)
 
 			//administrative apis
 			engine.GET("/borrowedbooks", app.ShowActiveBorrows)
 			engine.POST("/returnbook/:bookid", app.ReturnBook)
+			engine.GET("/customerinvoices", app.CustomerInvoiceHistory)
 			//book changes apis
 			engine.POST("/addbook", app.AddBook)
 			engine.PUT("/editbook", app.EditBook)
-
 		}
 	}
 	port := os.Getenv("PORT")

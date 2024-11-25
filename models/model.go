@@ -44,7 +44,7 @@ type LowBook struct {
 
 type BorrowedBook struct {
 	Book       LowBook   `json:"book"`
-	Returned   bool      `json:"returned"`
+	Returned   string    `json:"returned"`
 	BorrowTime time.Time `json:"boorow_time"`
 }
 
@@ -54,12 +54,12 @@ type UserLogin struct {
 }
 
 type Filter struct {
-	Genres    []string  `json:"genres"`
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-	Search    string    `json:"search"`
-	MinPages  int       `json:"min_pages"`
-	MaxPages  int       `json:"max_pages"`
+	Genres    []string `json:"genres"`
+	StartDate int      `json:"start_date"`
+	EndDate   int      `json:"end_date"`
+	Search    string   `json:"search"`
+	MinPages  int      `json:"min_pages"`
+	MaxPages  int      `json:"max_pages"`
 }
 
 type User struct {

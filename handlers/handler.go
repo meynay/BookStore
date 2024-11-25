@@ -25,6 +25,7 @@ type App struct {
 	GetSignal  map[int]chan (bool)
 }
 
+// middlewares
 func (app *App) ApiKeyCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		api_key := c.GetHeader("x-api-key")
@@ -55,6 +56,7 @@ func (app *App) AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// get books
 func (app *App) GetBooks(c *gin.Context) {
 	books := []models.LowBook{}
 	gotbooks, err := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
@@ -229,373 +231,14 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 	c.String(http.StatusOK, "Added before")
 }
 
-func (app *App) FaveOrUnfave(c *gin.Context) {
-	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	var js struct {
-		Id int `json:"book_id"`
-	}
-	err := c.BindJSON(&js)
-	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
-	log.Println(js.Id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	defer res.Close()
-	if !res.Next() {
-		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", js.Id, uid)
-		c.String(http.StatusOK, "Book added to faves")
-		return
-	}
-	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
-	c.String(http.StatusOK, "Book deleted from faves")
-}
-
-func (app *App) RecommendByRecord(c *gin.Context) {
-	FP_GROWTH_ROUTE := os.Getenv("FP_GROWTH_ROUTE")
-	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
-	if err != nil || !res.Next() {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	var bids []int
-	var bid int
-	if err := res.Scan(&bid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-	}
-	bids = append(bids, bid)
-	for res.Next() {
-		var bid int
-		if err := res.Scan(&bid); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		}
-		bids = append(bids, bid)
-	}
-	res.Close()
-	all := []models.FPG{}
-	jsonfile, err := os.Open(FP_GROWTH_ROUTE)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Noway")
-	}
-	byteread, err := ioutil.ReadAll(jsonfile)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Noway2")
-	}
-	err = json.Unmarshal(byteread, &all)
-	if err != nil {
-		c.String(http.StatusBadRequest, "Noway3")
-	}
-	result := []int{}
-	resMap := make(map[int]struct{})
-	for i := range all {
-		if functions.CheckCompatibility(bids, all[i].Base) {
-			for _, number := range all[i].Res {
-				if _, exists := resMap[number]; !exists {
-					resMap[number] = struct{}{}
-					result = append(result, number)
-				}
-			}
-		}
-	}
-	if len(result) > 1 {
-		str := fmt.Sprintf("(%d", result[0])
-		for _, val := range result[1:] {
-			str = fmt.Sprintf("%s, %d", str, val)
-		}
-		str += ")"
-		books := []models.LowBook{}
-		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url, rate_count, avg_rate FROM book WHERE book_id in %s", str))
-		if err != nil {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-		for res.Next() {
-			var book models.LowBook
-			res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl, &book.Count, &book.Rate)
-			books = append(books, book)
-		}
-		res.Close()
-		c.JSON(http.StatusOK, books)
-		return
-	} else if len(result) == 1 {
-		res, err := app.DB.Query("SELECT title, book_id, price, image_url FROM book WHERE book_id=$1", result[0])
-		if err != nil {
-			c.String(http.StatusNotFound, "couldn't find books")
-			return
-		}
-		res.Next()
-		var book models.LowBook
-		res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl)
-		c.JSON(http.StatusOK, book)
-		res.Close()
-		return
-	}
-	c.String(http.StatusNotFound, "No books found")
-}
-
-func (app *App) Login(c *gin.Context) {
-	user := models.UserLogin{}
-	err := c.BindJSON(&user)
-	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	user.Email = strings.ToLower(user.Email)
-	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
-	if err != nil || !res.Next() {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	defer res.Close()
-	var id int
-	var pass string
-	err = res.Scan(&id, &pass)
-	log.Println(id, pass)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	err = functions.CompareHashAndPassword(pass, user.Password)
-	if err != nil {
-		c.AbortWithStatus(http.StatusNotAcceptable)
-		return
-	}
-	expirationTime := time.Now().Add(30 * time.Minute)
-	claims := &models.Claims{
-		Uid: id,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime.Unix(),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"error": err.Error()})
-		return
-	}
-	jwtOutput := models.JWTOutput{
-		Token:   tokenString,
-		Expires: expirationTime,
-	}
-	c.JSON(http.StatusOK, jwtOutput)
-}
-
-func (app *App) Logout(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	err := functions.BlacklistToken(token, time.Hour*24)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
-}
-
-func (app *App) Signup(c *gin.Context) {
-	var user models.User
-	err := c.BindJSON(&user)
-	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	user.Email = strings.ToLower(user.Email)
-	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
-	if res.Next() || err != nil {
-		c.AbortWithStatus(http.StatusNotAcceptable)
-		return
-	}
-	res.Close()
-	user.Password, err = functions.HashPassword(user.Password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	res, _ = app.DB.Query("SELECT user_id FROM users ORDER BY user_id DESC LIMIT 1")
-	defer res.Close()
-	res.Next()
-	var id int
-	res.Scan(&id)
-	user.Id = id + 1
-	user.Role = false
-	user.Image = "tempo"
-	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
-	subject := "Bookstore sign up"
-	body := fmt.Sprintf(`
-		<h1>Welcome %s %s<h1>
-        <p>We're glad that you decided to use our service. Hope you can find what you seek in our web app</p>
-    `, user.Firstname, user.Lastname)
-	functions.SendEmail(user.Email, subject, body, app.Email)
-	c.String(http.StatusOK, "Signup successful")
-}
-
-func (app *App) RecommendByRates(c *gin.Context) {
-	id := functions.GetUserId(c.GetHeader("Authorization"))
-	req := fmt.Sprintf("http://localhost:9823/%d", id)
-	res, err := http.Get(req)
-	if err != nil {
-		fmt.Printf("error making http request: %s\n", err)
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	if res.StatusCode != http.StatusOK {
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	resBody, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	var bids []int
-	json.Unmarshal(resBody, &bids)
-	if len(bids) == 0 {
-		c.AbortWithStatus(http.StatusNotFound)
-		return
-	}
-	placeholders := []string{}
-	for i := range bids {
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-	}
-	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
-	res2, err := app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	defer res2.Close()
-	books := []models.LowBook{}
-	for res2.Next() {
-		var book models.LowBook
-		res2.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
-		books = append(books, book)
-	}
-	c.JSON(http.StatusOK, books)
-}
-
-func (app *App) AddBook(c *gin.Context) {
-	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	res.Next()
-	var b bool
-	res.Scan(&b)
-	if !b {
-		c.AbortWithStatus(http.StatusNotAcceptable)
-		return
-	}
-	res.Close()
-	var book models.Book
-	err = c.BindJSON(&book)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	res, err = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	defer res.Close()
-	res.Next()
-	var bid int
-	res.Scan(&bid)
-	bid += 1
-	book.Id = bid
-	_, err = app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib, avg_rate, rate_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib, book.AverageRate, book.RateCount)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	app.DB.Exec("INSERT INTO newbook(book_id, time_added) VALUES($1, $2)", bid, time.Now())
-	for _, genre := range book.Genres {
-		app.DB.Exec("INSERT INTO book_genre(book_id, genre) VALUES($1, $2)", bid, genre)
-	}
-	for _, Author := range book.Authors {
-		res, err = app.DB.Query("SELECT author_id FROM authors WHERE name=$1", Author.Author)
-		if err == nil {
-			res.Next()
-			var id int
-			res.Scan(&id)
-			app.DB.Exec("INSERT INTO book_author(book_id, author_id, role) VALUES($1, $2, $3)", bid, id, Author.Role)
-		} else {
-			res, _ = app.DB.Query("SELECT author_id FROM authors ORDER BY author_id DESC LIMIT 1")
-			res.Next()
-			var aid int
-			res.Scan(&aid)
-			aid += 1
-			app.DB.Exec("INSERT INTO authors(author_id, name) VALUES($1, $2)", aid, Author.Author)
-			app.DB.Exec("INSERT INTO book_author(book_id, author_id) VALUES($1, $2)", bid, aid)
-		}
-	}
-	c.String(http.StatusOK, "book added to DB")
-}
-
-func (app *App) EditBook(c *gin.Context) {
-	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	defer res.Close()
-	res.Next()
-	var b bool
-	res.Scan(&b)
-	if !b {
-		c.AbortWithStatus(http.StatusNotAcceptable)
-		return
-	}
-	var book models.Book
-	if err := c.BindJSON(&book); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
-	c.String(http.StatusOK, "Book updated")
-}
-
-func (app *App) GetUserProfile(c *gin.Context) {
-	id := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-		return
-	}
-	defer res.Close()
-	res.Next()
-	var fname, lname, image string
-	res.Scan(&fname, &lname, &image)
-	if image == "tempo" {
-		image = ""
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"firstname": fname,
-		"lastname":  lname,
-		"image":     image,
-	})
-}
-
-func (apap *App) GetProfPic(c *gin.Context) {
-	fname := c.Param("image")
-	fdir := os.Getenv("FILE_DIR")
-	c.File(fdir + "/" + fname)
-}
-
 func (app *App) FilterBooks(c *gin.Context) {
 	filters := models.Filter{}
 	if err := c.ShouldBindBodyWithJSON(&filters); err != nil {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	startdate := time.Date(filters.StartDate, 1, 1, 0, 0, 0, 0, time.UTC)
+	enddate := time.Date(filters.EndDate, 12, 30, 23, 59, 59, 0, time.UTC)
 	books := []models.Book{}
 	if len(filters.Genres) > 0 {
 		res, err := app.DB.Query("SELECT book_id FROM book_genre WHERE genre in $1", filters.Genres)
@@ -643,7 +286,7 @@ func (app *App) FilterBooks(c *gin.Context) {
 		}
 	}
 	for id, book := range books {
-		if !(book.NumberOfPages > filters.MinPages && book.NumberOfPages < filters.MaxPages) || !(book.PublicationDate.After(filters.StartDate) && book.PublicationDate.Before(filters.EndDate)) {
+		if !(book.NumberOfPages > filters.MinPages && book.NumberOfPages < filters.MaxPages) || !(book.PublicationDate.After(startdate) && book.PublicationDate.Before(enddate)) {
 			books = append(books[:id], books[id+1:]...)
 		}
 	}
@@ -663,6 +306,32 @@ func (app *App) FilterBooks(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, returning)
+}
+
+func (app *App) FaveOrUnfave(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	var js struct {
+		Id int `json:"book_id"`
+	}
+	err := c.BindJSON(&js)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	res, err := app.DB.Query("SELECT * FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
+	log.Println(js.Id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	defer res.Close()
+	if !res.Next() {
+		app.DB.Exec("INSERT INTO user_fave(book_id, user_id) values($1, $2)", js.Id, uid)
+		c.String(http.StatusOK, "Book added to faves")
+		return
+	}
+	app.DB.Exec("DELETE FROM user_fave WHERE book_id=$1 AND user_id=$2", js.Id, uid)
+	c.String(http.StatusOK, "Book deleted from faves")
 }
 
 func (app *App) RateBook(c *gin.Context) {
@@ -809,6 +478,130 @@ func (app *App) GetFavedBooks(c *gin.Context) {
 	c.JSON(http.StatusOK, books)
 }
 
+// user section
+func (app *App) Login(c *gin.Context) {
+	user := models.UserLogin{}
+	err := c.BindJSON(&user)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	user.Email = strings.ToLower(user.Email)
+	res, err := app.DB.Query("SELECT user_id, password FROM users WHERE email=$1", user.Email)
+	if err != nil || !res.Next() {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	defer res.Close()
+	var id int
+	var pass string
+	err = res.Scan(&id, &pass)
+	log.Println(id, pass)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	err = functions.CompareHashAndPassword(pass, user.Password)
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	expirationTime := time.Now().Add(30 * time.Minute)
+	claims := &models.Claims{
+		Uid: id,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError,
+			gin.H{"error": err.Error()})
+		return
+	}
+	jwtOutput := models.JWTOutput{
+		Token:   tokenString,
+		Expires: expirationTime,
+	}
+	c.JSON(http.StatusOK, jwtOutput)
+}
+
+func (app *App) Logout(c *gin.Context) {
+	token := c.GetHeader("Authorization")
+	err := functions.BlacklistToken(token, time.Hour*24)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+}
+
+func (app *App) Signup(c *gin.Context) {
+	var user models.User
+	err := c.BindJSON(&user)
+	if err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	user.Email = strings.ToLower(user.Email)
+	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
+	if res.Next() || err != nil {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	res.Close()
+	user.Password, err = functions.HashPassword(user.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res, _ = app.DB.Query("SELECT user_id FROM users ORDER BY user_id DESC LIMIT 1")
+	defer res.Close()
+	res.Next()
+	var id int
+	res.Scan(&id)
+	user.Id = id + 1
+	user.Role = false
+	user.Image = "tempo"
+	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
+	subject := "Bookstore sign up"
+	body := fmt.Sprintf(`
+		<h1>Welcome %s %s<h1>
+        <p>We're glad that you decided to use our service. Hope you can find what you seek in our web app</p>
+    `, user.Firstname, user.Lastname)
+	functions.SendEmail(user.Email, subject, body, app.Email)
+	c.String(http.StatusOK, "Signup successful")
+}
+
+func (app *App) GetUserProfile(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT firstname, lastname, image FROM users WHERE user_id=$1", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	defer res.Close()
+	res.Next()
+	var fname, lname, image string
+	res.Scan(&fname, &lname, &image)
+	if image == "tempo" {
+		image = ""
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"firstname": fname,
+		"lastname":  lname,
+		"image":     image,
+	})
+}
+
+func (apap *App) GetProfPic(c *gin.Context) {
+	fname := c.Param("image")
+	fdir := os.Getenv("FILE_DIR")
+	c.File(fdir + "/" + fname)
+}
+
 func (app *App) GetUserInfo(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
 	res, err := app.DB.Query("SELECT firstname, lastname, email, phone, image, role FROM users WHERE user_id=$1", uid)
@@ -915,8 +708,221 @@ func (app *App) ResetPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"Message": "Password changed successfully"})
 }
 
-func (app *App) AddToCart(c *gin.Context) {}
+// recommenders
+func (app *App) RecommendByRates(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	req := fmt.Sprintf("http://localhost:9823/%d", id)
+	res, err := http.Get(req)
+	if err != nil {
+		fmt.Printf("error making http request: %s\n", err)
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	if res.StatusCode != http.StatusOK {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	resBody, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	var bids []int
+	json.Unmarshal(resBody, &bids)
+	if len(bids) == 0 {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	placeholders := []string{}
+	for i := range bids {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	query := fmt.Sprintf("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE book_id IN (%s)", strings.Join(placeholders, ", "))
+	res2, err := app.DB.Query(query, functions.ConvertToInterfaceSlice(bids)...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	defer res2.Close()
+	books := []models.LowBook{}
+	for res2.Next() {
+		var book models.LowBook
+		res2.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Price, &book.Rate, &book.Count)
+		books = append(books, book)
+	}
+	c.JSON(http.StatusOK, books)
+}
 
+func (app *App) RecommendByRecord(c *gin.Context) {
+	FP_GROWTH_ROUTE := os.Getenv("FP_GROWTH_ROUTE")
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT book_id FROM user_read WHERE userid = $1", id)
+	if err != nil || !res.Next() {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	var bids []int
+	var bid int
+	if err := res.Scan(&bid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+	}
+	bids = append(bids, bid)
+	for res.Next() {
+		var bid int
+		if err := res.Scan(&bid); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		}
+		bids = append(bids, bid)
+	}
+	res.Close()
+	all := []models.FPG{}
+	jsonfile, err := os.Open(FP_GROWTH_ROUTE)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway")
+	}
+	byteread, err := ioutil.ReadAll(jsonfile)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway2")
+	}
+	err = json.Unmarshal(byteread, &all)
+	if err != nil {
+		c.String(http.StatusBadRequest, "Noway3")
+	}
+	result := []int{}
+	resMap := make(map[int]struct{})
+	for i := range all {
+		if functions.CheckCompatibility(bids, all[i].Base) {
+			for _, number := range all[i].Res {
+				if _, exists := resMap[number]; !exists {
+					resMap[number] = struct{}{}
+					result = append(result, number)
+				}
+			}
+		}
+	}
+	if len(result) > 1 {
+		str := fmt.Sprintf("(%d", result[0])
+		for _, val := range result[1:] {
+			str = fmt.Sprintf("%s, %d", str, val)
+		}
+		str += ")"
+		books := []models.LowBook{}
+		res, err := app.DB.Query(fmt.Sprintf("SELECT title, book_id, price, image_url, rate_count, avg_rate FROM book WHERE book_id in %s", str))
+		if err != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		for res.Next() {
+			var book models.LowBook
+			res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl, &book.Count, &book.Rate)
+			books = append(books, book)
+		}
+		res.Close()
+		c.JSON(http.StatusOK, books)
+		return
+	} else if len(result) == 1 {
+		res, err := app.DB.Query("SELECT title, book_id, price, image_url FROM book WHERE book_id=$1", result[0])
+		if err != nil {
+			c.String(http.StatusNotFound, "couldn't find books")
+			return
+		}
+		res.Next()
+		var book models.LowBook
+		res.Scan(&book.Title, &book.Id, &book.Price, &book.ImageUrl)
+		c.JSON(http.StatusOK, book)
+		res.Close()
+		return
+	}
+	c.String(http.StatusNotFound, "No books found")
+}
+
+// book changes
+func (app *App) AddBook(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	res.Close()
+	var book models.Book
+	err = c.BindJSON(&book)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res, err = app.DB.Query("SELECT book_id FROM book ORDER BY book_id DESC LIMIT 1")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	defer res.Close()
+	res.Next()
+	var bid int
+	res.Scan(&bid)
+	bid += 1
+	book.Id = bid
+	_, err = app.DB.Exec("INSERT INTO book(book_id, title, isbn, image_url, publication_date, isbn13, num_pages, publisher, book_format, description, price, quantity_sale, quantity_lib, avg_rate, rate_count) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", book.Id, book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib, book.AverageRate, book.RateCount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	app.DB.Exec("INSERT INTO newbook(book_id, time_added) VALUES($1, $2)", bid, time.Now())
+	for _, genre := range book.Genres {
+		app.DB.Exec("INSERT INTO book_genre(book_id, genre) VALUES($1, $2)", bid, genre)
+	}
+	for _, Author := range book.Authors {
+		res, err = app.DB.Query("SELECT author_id FROM authors WHERE name=$1", Author.Author)
+		if err == nil {
+			res.Next()
+			var id int
+			res.Scan(&id)
+			app.DB.Exec("INSERT INTO book_author(book_id, author_id, role) VALUES($1, $2, $3)", bid, id, Author.Role)
+		} else {
+			res, _ = app.DB.Query("SELECT author_id FROM authors ORDER BY author_id DESC LIMIT 1")
+			res.Next()
+			var aid int
+			res.Scan(&aid)
+			aid += 1
+			app.DB.Exec("INSERT INTO authors(author_id, name) VALUES($1, $2)", aid, Author.Author)
+			app.DB.Exec("INSERT INTO book_author(book_id, author_id) VALUES($1, $2)", bid, aid)
+		}
+	}
+	c.String(http.StatusOK, "book added to DB")
+}
+
+func (app *App) EditBook(c *gin.Context) {
+	id := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	defer res.Close()
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	var book models.Book
+	if err := c.BindJSON(&book); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	app.DB.Exec("UPDATE book SET title=$1 and isbn=$2 and image_url=$3 and publication_date=$4 and isbn13=$5 and num_pages=$6 and publisher=$7 and book_format=&8 and description=$9 and price=$10 and quantity_sale=$11 and quantity_lib=$12", book.Title, book.Isbn, book.ImageUrl, book.PublicationDate, book.Isbn13, book.NumberOfPages, book.Publisher, book.Format, book.Description, book.Price, book.QuantityForSale, book.QuantityInLib)
+	c.String(http.StatusOK, "Book updated")
+}
+
+// borrow section
 func (app *App) GetLibStatus(c *gin.Context) {
 	bid, _ := strconv.Atoi(c.Param("bookid"))
 	res, err := app.DB.Query("SELECT * FROM borrow_book WHERE book_id = $1 AND returned = 'no'", bid)
@@ -1041,4 +1047,223 @@ func (app *App) ShowActiveBorrows(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, books)
+}
+
+// buy section
+func (app *App) AddToCart(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT quantity_sale FROM book WHERE book_id = $1", bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	res.Next()
+	var count int
+	res.Scan(&count)
+	if count != 0 {
+		c.JSON(http.StatusNotAcceptable, gin.H{"message": "can't add this item to your cart"})
+		return
+	}
+	res, err = app.DB.Query("SELECT invoice_id FROM invoice WHERE user_id=$1 AND status='open'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var invoice_id int
+	if !res.Next() {
+		res.Close()
+		res, err = app.DB.Query("SELECT invoice_id FROM invoices ORDER BY invoice_id DESC LIMIT 1")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		var invoice_id int
+		if !res.Next() {
+			invoice_id = 1
+		} else {
+			res.Scan(&invoice_id)
+			invoice_id++
+		}
+		app.DB.Exec("INSERT INTO invoice(invoice_id, user_id, status, purchase_date) VALUES($1, $2, 'open', $3)", invoice_id, uid, time.Now())
+	} else {
+		res.Scan(&invoice_id)
+	}
+	count--
+	app.DB.Exec("UPDATE book SET quantity_sale=$1 WHERE book_id=$2", count, bid)
+	app.DB.Exec("INSERT INTO invoice_book(invoice_id, book_id) VALUES($1, $2)", invoice_id, bid)
+	c.JSON(http.StatusOK, gin.H{"message": "book added to cart"})
+}
+
+func (app *App) DeleteFromCart(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT invoice_id FROM invoice WHERE user_id=$1 AND status='open'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no active invoices"})
+		return
+	}
+	var invoice_id int
+	res.Scan(&invoice_id)
+	res, err = app.DB.Query("SELECT quantity_sale FROM book WHERE book_id = $1", bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	res.Next()
+	var count int
+	res.Scan(&count)
+	count++
+	app.DB.Exec("UPDATE book SET quantity_sale=$1 WHERE book_id=$2", count, bid)
+	app.DB.Exec("DELETE FROM invoice_book WHERE invoice_id=$1 AND book_id=$2", invoice_id, bid)
+	c.JSON(http.StatusOK, gin.H{"message": "book removed from cart"})
+}
+
+func (app *App) IsInCart(c *gin.Context) {
+	bid, _ := strconv.Atoi(c.Param("bookid"))
+	uid := functions.GetUserId(c.GetHeader("Authorization"))
+	res, err := app.DB.Query("SELECT * FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id WHERE invoice.user_id=$1 AND invoice_book.book_id=$2 AND invoice.status='open'", uid, bid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no such book on active invocie"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "book exists in active invoice"})
+}
+
+func (app *App) GetActiveInvoice(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("authorization"))
+	res, err := app.DB.Query("SELECT book_id, price, title, image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id INNER JOIN book ON book.book_id=invoice_book.book_id WHERE invocie.status='open' AND invoice.user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	books := []models.LowBook{}
+	for res.Next() {
+		var book models.LowBook
+		res.Scan(&book.Id, &book.Price, &book.Title, &book.ImageUrl)
+		books = append(books, book)
+	}
+	if len(books) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no active invoices"})
+		return
+	}
+	c.JSON(http.StatusOK, books)
+}
+
+func (app *App) FinalizeInvoice(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("authorization"))
+	res, err := app.DB.Query("SELECT invocie_id FROM invocie WHERE user_id=$1 AND status='open'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !res.Next() {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no active invoices found for user"})
+		return
+	}
+	var iid int
+	res.Scan(&iid)
+	app.DB.Exec("UPDATE invoice SET status='close', purchase_date=$2 WHERE invocie_id=$1", iid, time.Now())
+	link := fmt.Sprintf("https://bikaransystem.work.gd/invoice/%d", iid)
+	subject := "سفارش شما تکمیل شد"
+	body := fmt.Sprintf(`<p>سفارش شما به شماره %d تکمیل شد</p>
+	<p>برای دریافت سفارش کافی است در روز های آتی به کتابخانه مراجعه نمایید.</p>
+	<a href="%s">نمایش سفارش</a>`, iid, link)
+	res, _ = app.DB.Query("SELECT email FROM users WHERE user_id=$1", uid)
+	res.Next()
+	var email string
+	res.Scan(&email)
+	functions.SendEmail(email, subject, body, app.Email)
+	c.JSON(http.StatusOK, gin.H{"message": "invoice closed"})
+}
+
+func (app *App) ShowInvoice(c *gin.Context) {
+	iid, _ := strconv.Atoi(c.Param("invoice"))
+	res, err := app.DB.Query("SELECT book_id, price, title, image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id INNER JOIN book ON book.book_id=invoice_book.book_id WHERE invoice_id=$1", iid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	books := []models.LowBook{}
+	for res.Next() {
+		var book models.LowBook
+		res.Scan(&book.Id, &book.Price, &book.Title, &book.ImageUrl)
+		books = append(books, book)
+	}
+	c.JSON(http.StatusOK, books)
+}
+
+func (app *App) InvoiceHistory(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("authorization"))
+	res, err := app.DB.Query("SELECT invoice_id, purchase_date FROM invoice WHERE user_id=$1 AND status='close'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var invoices []struct {
+		InvoiceID    int       `json:"invoice_id"`
+		PurchaseDate time.Time `json:"purchase_date"`
+	}
+	for res.Next() {
+		var invoice struct {
+			InvoiceID    int       `json:"invoice_id"`
+			PurchaseDate time.Time `json:"purchase_date"`
+		}
+		res.Scan(&invoice.InvoiceID, &invoice.PurchaseDate)
+		invoices = append(invoices, invoice)
+	}
+	if len(invoices) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no invoices found for user"})
+		return
+	}
+	c.JSON(http.StatusOK, invoices)
+}
+
+func (app *App) CustomerInvoiceHistory(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.AbortWithStatus(http.StatusNotAcceptable)
+		return
+	}
+	res.Close()
+	res, err = app.DB.Query("SELECT invoice_id, purchase_date, (firstname || ' ' || lastname) as name FROM invoice INNER JOIN users on users.user_id=invoice.user_id WHERE status='close'", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	var invoices []struct {
+		InvoiceID    int       `json:"invoice_id"`
+		PurchaseDate time.Time `json:"purchase_date"`
+		Name         string    `json:"customer_name"`
+	}
+	for res.Next() {
+		var invoice struct {
+			InvoiceID    int       `json:"invoice_id"`
+			PurchaseDate time.Time `json:"purchase_date"`
+			Name         string    `json:"customer_name"`
+		}
+		res.Scan(&invoice.InvoiceID, &invoice.PurchaseDate, &invoice.Name)
+		invoices = append(invoices, invoice)
+	}
+	if len(invoices) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "no invoices found"})
+		return
+	}
+	c.JSON(http.StatusOK, invoices)
 }
