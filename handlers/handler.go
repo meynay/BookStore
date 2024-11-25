@@ -14,6 +14,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"github.com/meynay/BookStore/functions"
 	"github.com/meynay/BookStore/models"
 )
@@ -232,90 +233,45 @@ func (app *App) CheckIfFaved(c *gin.Context) {
 }
 
 func (app *App) FilterBooks(c *gin.Context) {
-	filters := models.Filter{}
+	var filters models.Filter
 	if err := c.BindJSON(&filters); err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	startdate := time.Date(filters.StartDate, 1, 1, 0, 0, 0, 0, time.UTC)
-	enddate := time.Date(filters.EndDate, 12, 30, 23, 59, 59, 0, time.UTC)
-	books := []models.Book{}
+	enddate := time.Date(filters.EndDate, 12, 31, 23, 59, 59, 0, time.UTC)
+	var queryBuilder strings.Builder
+	var args []interface{}
+	queryBuilder.WriteString("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book WHERE")
+	queryBuilder.WriteString("(LOWER(title) LIKE $1 OR LOWER(publisher) LIKE $1) AND ")
+	args = append(args, fmt.Sprintf("%%%s%%", strings.ToLower(filters.Search)))
+	queryBuilder.WriteString("num_pages BETWEEN $2 AND $3 AND publication_date BETWEEN $4 AND $5 ")
+	args = append(args, filters.MinPages, filters.MaxPages, startdate, enddate)
 	if len(filters.Genres) > 0 {
-		placeholders := []string{}
-		for i := range filters.Genres {
-			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-		}
-		query := fmt.Sprintf("SELECT book_id FROM book_genre WHERE genre in (%s)", strings.Join(placeholders, ", "))
-		res, err := app.DB.Query(query, functions.ConvertToInterfaceSlices(filters.Genres)...)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-			return
-		}
-		book_ids := []int{}
-		for res.Next() {
-			var id int
-			res.Scan(&id)
-			book_ids = append(book_ids, id)
-		}
-		res.Close()
-		placeholders = []string{}
-		for i := range book_ids {
-			placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
-		}
-		query = fmt.Sprintf("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book WHERE book_id in (%s)", strings.Join(placeholders, ", "))
-		res, err = app.DB.Query(query, functions.ConvertToInterfaceSlice(book_ids)...)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-			return
-		}
-		for res.Next() {
-			var b models.Book
-			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
-			books = append(books, b)
-		}
-		res.Close()
-	} else {
-		res, err := app.DB.Query("SELECT book_id, title, image_url, publication_date, num_pages, avg_rate, rate_count, publisher FROM book")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
-			return
-		}
-		for res.Next() {
-			var b models.Book
-			res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.PublicationDate, &b.NumberOfPages, &b.AverageRate, &b.RateCount, &b.Publisher)
-			books = append(books, b)
-		}
-		res.Close()
+		queryBuilder.WriteString("AND book_id IN (SELECT book_id FROM book_genre WHERE genre = ANY($6))")
+		args = append(args, pq.Array(filters.Genres))
 	}
-	if filters.Search != "" {
-		filters.Search = strings.ToLower(filters.Search)
-		for id, book := range books {
-			if !strings.Contains(strings.ToLower(book.Title), filters.Search) && !strings.Contains(strings.ToLower(book.Publisher), filters.Search) {
-				books = append(books[:id], books[id+1:]...)
-			}
-		}
-	}
-	for id, book := range books {
-		if !(book.NumberOfPages > filters.MinPages && book.NumberOfPages < filters.MaxPages) || !(book.PublicationDate.After(startdate) && book.PublicationDate.Before(enddate)) {
-			books = append(books[:id], books[id+1:]...)
-		}
-	}
-	if len(books) == 0 {
-		c.AbortWithStatus(http.StatusNotFound)
+	query := queryBuilder.String()
+	res, err := app.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	returning := []models.LowBook{}
-	for _, book := range books {
-		returning = append(returning, models.LowBook{
-			Title:    book.Title,
-			ImageUrl: book.ImageUrl,
-			Rate:     book.AverageRate,
-			Count:    book.RateCount,
-			Id:       book.Id,
-			Price:    book.Price,
-		})
+	defer res.Close()
+	var books []models.LowBook
+	for res.Next() {
+		var b models.LowBook
+		if err := res.Scan(&b.Id, &b.Title, &b.ImageUrl, &b.Price, &b.Rate, &b.Count); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		books = append(books, b)
 	}
-	c.JSON(http.StatusOK, returning)
+	if len(books) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "No books found"})
+		return
+	}
+	c.JSON(http.StatusOK, books)
 }
 
 func (app *App) FaveOrUnfave(c *gin.Context) {
