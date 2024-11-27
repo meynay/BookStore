@@ -681,11 +681,11 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	res, err := http.Get(req)
 	if err != nil {
 		fmt.Printf("error making http request: %s\n", err)
-		c.AbortWithStatus(http.StatusBadRequest)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if res.StatusCode != http.StatusOK {
-		c.AbortWithStatus(http.StatusBadRequest)
+		c.JSON(res.StatusCode, gin.H{"message": res.Body})
 		return
 	}
 	resBody, err := ioutil.ReadAll(res.Body)
@@ -696,7 +696,7 @@ func (app *App) RecommendByRates(c *gin.Context) {
 	var bids []int
 	json.Unmarshal(resBody, &bids)
 	if len(bids) == 0 {
-		c.AbortWithStatus(http.StatusNotFound)
+		c.JSON(http.StatusNotFound, gin.H{"message": "no books found for user"})
 		return
 	}
 	placeholders := []string{}
