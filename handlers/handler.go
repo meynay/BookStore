@@ -248,9 +248,10 @@ func (app *App) FilterBooks(c *gin.Context) {
 	queryBuilder.WriteString("num_pages BETWEEN $2 AND $3 AND publication_date BETWEEN $4 AND $5 ")
 	args = append(args, filters.MinPages, filters.MaxPages, startdate, enddate)
 	if len(filters.Genres) > 0 {
-		queryBuilder.WriteString("AND book_id IN (SELECT book_id FROM book_genre WHERE genre = ANY($6))")
+		queryBuilder.WriteString("AND book_id IN (SELECT book_id FROM book_genre WHERE genre = ANY($6)) ")
 		args = append(args, pq.Array(filters.Genres))
 	}
+	queryBuilder.WriteString("ORDER BY RANDOM() LIMIT 1000")
 	query := queryBuilder.String()
 	res, err := app.DB.Query(query, args...)
 	if err != nil {
