@@ -767,6 +767,11 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 			}
 		}
 	}
+	for i := range result {
+		if functions.Exists(result[i], bids) {
+			result = append(result[:i], result[i+1:]...)
+		}
+	}
 	if len(result) > 1 {
 		str := fmt.Sprintf("(%d", result[0])
 		for _, val := range result[1:] {
