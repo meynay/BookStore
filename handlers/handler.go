@@ -60,9 +60,9 @@ func (app *App) AuthMiddleware() gin.HandlerFunc {
 // get books
 func (app *App) GetBooks(c *gin.Context) {
 	books := []models.LowBook{}
-	gotbooks, err := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 500")
+	gotbooks, err := app.DB.Query("SELECT book_id, title, image_url, price, avg_rate, rate_count FROM book ORDER BY RANDOM() LIMIT 1000")
 	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer gotbooks.Close()

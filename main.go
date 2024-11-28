@@ -3,11 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -24,7 +24,7 @@ func getDB() *sql.DB {
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, pass, database, port)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatal("Error connecting to database")
+		panic(err)
 	}
 	return db
 }
@@ -46,6 +46,7 @@ func main() {
 		ResetToken: make(map[string]string),
 	}
 	engine := gin.Default()
+	engine.Use(gzip.Gzip(gzip.BestCompression, gzip.WithExcludedExtensions([]string{".png", ".jpeg"})))
 	engine.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"}, // Change to your domain
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
