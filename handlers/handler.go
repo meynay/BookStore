@@ -387,10 +387,13 @@ func (app *App) CommentOnBook(c *gin.Context) {
 	var rate models.Rate
 	err := c.BindJSON(&rate)
 	if err != nil {
-		c.AbortWithStatus(http.StatusBadRequest)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	app.DB.Exec("INSERT INTO comment(book_id, user_id, review, date_added) values($1, $2, $3, $4)", rate.Bid, uid, rate.Review, time.Now())
+	_, err = app.DB.Exec("INSERT INTO comment(book_id, user_id, review, date_added) values($1, $2, $3, $4)", rate.Bid, uid, rate.Review, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 	c.String(http.StatusOK, "Comment added")
 }
 
@@ -457,6 +460,7 @@ func (app *App) GetFavedBooks(c *gin.Context) {
 		bids = append(bids, bid)
 	}
 	placeholders := []string{}
+	res.Close()
 	for i := range bids {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 	}
@@ -607,6 +611,7 @@ func (app *App) GetUserInfo(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 		return
 	}
+	defer res.Close()
 	res.Next()
 	var user models.User
 	if err = res.Scan(&user.Firstname, &user.Lastname, &user.Email, &user.Image, &user.Role); err != nil {
@@ -624,8 +629,12 @@ func (app *App) UploadImage(c *gin.Context) {
 		return
 	}
 	fileDir := os.Getenv("FILE_DIR")
-	res, _ := app.DB.Query("SELECT image from users WHERE user_id=$1", uid)
+	res, err := app.DB.Query("SELECT image from users WHERE user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 	var img string
+	defer res.Close()
 	res.Scan(&img)
 	if img != "tempo" {
 		os.Remove(fmt.Sprintf("%s/%s", fileDir, img))
@@ -657,6 +666,7 @@ func (app *App) ResetPasswordMail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 		return
 	}
+	defer res.Close()
 	if !res.Next() {
 		c.JSON(http.StatusNotFound, gin.H{"Error": "No user found with given Email"})
 		return
@@ -933,6 +943,7 @@ func (app *App) GetLibStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	if !res.Next() {
 		c.JSON(http.StatusOK, gin.H{"message": "you can borrow"})
 		return
@@ -957,14 +968,17 @@ func (app *App) BorrowBook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	res.Close()
 	res, _ = app.DB.Query("SELECT title FROM book WHERE book_id = $1", bid)
 	res.Next()
 	var title, email, name string
 	res.Scan(&title)
+	res.Close()
 	subject := "امانت کتاب"
 	body := fmt.Sprintf(`<p>کتاب %s با موفقیت امانت گرفته شد</p>
 	<p>برای دریافت کتاب به کتابخانه مراجعه کنید و با ارائه کارت خود کتاب را تحویل بگیرید.</p>`, title)
 	res, _ = app.DB.Query("SELECT email, (firstname || ' ' || lastname) as name FROM users WHERE user_id=$1", uid)
+	defer res.Close()
 	res.Next()
 	res.Scan(&email, &name)
 	functions.SendEmail(email, subject, body, app.Email)
@@ -1000,7 +1014,7 @@ func (app *App) ReturnBook(c *gin.Context) {
 		return
 	}
 	res.Close()
-	_, err = app.DB.Query("UPDATE borrow_book SET returned='yes' WHERE book_id=$1 AND returned = 'no'", bid)
+	_, err = app.DB.Exec("UPDATE borrow_book SET returned='yes' WHERE book_id=$1 AND returned = 'no'", bid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1016,6 +1030,7 @@ func (app *App) BorrowHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	books := functions.GetBorrowedBooks(res)
 	if len(books) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"message": "no books found for user"})
@@ -1044,6 +1059,7 @@ func (app *App) ShowActiveBorrows(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	books := functions.GetBorrowedBooks(res)
 	if len(books) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"message": "no active borrows"})
@@ -1068,6 +1084,7 @@ func (app *App) AddToCart(c *gin.Context) {
 		c.JSON(http.StatusNotAcceptable, gin.H{"message": "can't add this item to your cart"})
 		return
 	}
+	res.Close()
 	res, err = app.DB.Query("SELECT invoice_id FROM invoice WHERE user_id=$1 AND status='open'", uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1088,9 +1105,11 @@ func (app *App) AddToCart(c *gin.Context) {
 			res.Scan(&invoice_id)
 			invoice_id++
 		}
+		res.Close()
 		app.DB.Exec("INSERT INTO invoice(invoice_id, user_id, status, purchase_date) VALUES($1, $2, 'open', $3)", invoice_id, uid, time.Now())
 	} else {
 		res.Scan(&invoice_id)
+		res.Close()
 	}
 	count--
 	app.DB.Exec("UPDATE book SET quantity_sale=$1 WHERE book_id=$2", count, bid)
@@ -1112,11 +1131,13 @@ func (app *App) DeleteFromCart(c *gin.Context) {
 	}
 	var invoice_id int
 	res.Scan(&invoice_id)
+	res.Close()
 	res, err = app.DB.Query("SELECT quantity_sale FROM book WHERE book_id = $1", bid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	res.Next()
 	var count int
 	res.Scan(&count)
@@ -1134,6 +1155,7 @@ func (app *App) IsInCart(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	if !res.Next() {
 		c.JSON(http.StatusNotFound, gin.H{"message": "no such book on active invocie"})
 		return
@@ -1148,6 +1170,7 @@ func (app *App) GetActiveInvoice(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	books := []models.LowBook{}
 	for res.Next() {
 		var book models.LowBook
@@ -1175,7 +1198,9 @@ func (app *App) FinalizeInvoice(c *gin.Context) {
 	var iid int
 	res.Scan(&iid)
 	app.DB.Exec("UPDATE invoice SET status='close', purchase_date=$2 WHERE invocie_id=$1", iid, time.Now())
+	res.Close()
 	res, _ = app.DB.Query("SELECT book_id FROM invoice_book WHERE invoice_id=$1", iid)
+	defer res.Close()
 	for res.Next() {
 		var bid int
 		res.Scan(&bid)
@@ -1201,6 +1226,7 @@ func (app *App) ShowInvoice(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	books := []models.LowBook{}
 	for res.Next() {
 		var book models.LowBook
@@ -1217,6 +1243,7 @@ func (app *App) InvoiceHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	var invoices []struct {
 		InvoiceID    int       `json:"invoice_id"`
 		PurchaseDate time.Time `json:"purchase_date"`
@@ -1256,6 +1283,7 @@ func (app *App) CustomerInvoiceHistory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defer res.Close()
 	var invoices []struct {
 		InvoiceID    int       `json:"invoice_id"`
 		PurchaseDate time.Time `json:"purchase_date"`
