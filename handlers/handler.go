@@ -1197,7 +1197,7 @@ func (app *App) FinalizeInvoice(c *gin.Context) {
 	}
 	var iid int
 	res.Scan(&iid)
-	app.DB.Exec("UPDATE invoice SET status='close', purchase_date=$2 WHERE invocie_id=$1", iid, time.Now())
+	app.DB.Exec("UPDATE invoice SET status='close', purchase_date=$2 WHERE invoice_id=$1", iid, time.Now())
 	res.Close()
 	res, _ = app.DB.Query("SELECT book_id FROM invoice_book WHERE invoice_id=$1", iid)
 	defer res.Close()
