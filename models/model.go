@@ -1,6 +1,7 @@
 package models
 
 import (
+	"sync"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -67,7 +68,6 @@ type User struct {
 	Firstname string `json:"firstname"`
 	Lastname  string `json:"lastname"`
 	Image     string `json:"image"`
-	Phone     string `json:"phone"`
 	Email     string `json:"email"`
 	Password  string `json:"password"`
 	Role      bool   `json:"role"`
@@ -104,4 +104,9 @@ type EmailConfig struct {
 	Username    string
 	Password    string
 	SenderEmail string
+}
+
+type RateLimiter struct {
+	Mutex    sync.Mutex
+	Visitors map[string][]bool
 }

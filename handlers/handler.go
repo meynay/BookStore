@@ -22,9 +22,13 @@ import (
 type App struct {
 	DB         *sql.DB
 	Email      models.EmailConfig
+	RateLimit  models.RateLimiter
 	ResetToken map[string]string
 	GetSignal  map[int]chan (bool)
 }
+
+const RATELIMIT = 200
+const DURATION = time.Minute
 
 // middlewares
 func (app *App) ApiKeyCheck() gin.HandlerFunc {
@@ -53,6 +57,33 @@ func (app *App) AuthMiddleware() gin.HandlerFunc {
 		if tkn == nil || !tkn.Valid || functions.IsTokenBlacklisted(tokenValue) {
 			c.AbortWithStatus(http.StatusUnauthorized)
 		}
+		c.Next()
+	}
+}
+
+func (app *App) DDOSPrevent() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		app.RateLimit.Mutex.Lock()
+		defer app.RateLimit.Mutex.Unlock()
+		arr, exists := app.RateLimit.Visitors[ip]
+		if exists {
+			if len(arr) >= RATELIMIT {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"message": "send less requests"})
+				return
+			}
+			arr = append(arr, true)
+		} else {
+			arr = []bool{true}
+			app.RateLimit.Visitors[ip] = arr
+		}
+		app.RateLimit.Visitors[ip] = arr
+		go func() {
+			time.Sleep(DURATION)
+			vis := app.RateLimit.Visitors[ip]
+			vis = vis[:len(vis)-1]
+			app.RateLimit.Visitors[ip] = vis
+		}()
 		c.Next()
 	}
 }
@@ -473,7 +504,7 @@ func (app *App) Login(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotAcceptable)
 		return
 	}
-	expirationTime := time.Now().Add(30 * time.Minute)
+	expirationTime := time.Now().Add(60 * time.Minute)
 	claims := &models.Claims{
 		Uid: id,
 		StandardClaims: jwt.StandardClaims{
@@ -513,9 +544,9 @@ func (app *App) Signup(c *gin.Context) {
 		return
 	}
 	user.Email = strings.ToLower(user.Email)
-	res, err := app.DB.Query("SELECT * FROM users WHERE phone=$1 OR email=$2", user.Phone, user.Email)
+	res, err := app.DB.Query("SELECT * FROM users WHERE email=$1", user.Email)
 	if res.Next() || err != nil {
-		c.AbortWithStatus(http.StatusNotAcceptable)
+		c.JSON(http.StatusNotAcceptable, gin.H{"message": "email alerady exists"})
 		return
 	}
 	res.Close()
@@ -532,7 +563,7 @@ func (app *App) Signup(c *gin.Context) {
 	user.Id = id + 1
 	user.Role = false
 	user.Image = "tempo"
-	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, phone, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Phone, user.Email, user.Image, user.Role)
+	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Email, user.Image, user.Role)
 	subject := "Bookstore sign up"
 	body := fmt.Sprintf(`
 		<h1>Welcome %s %s<h1>
@@ -571,14 +602,14 @@ func (apap *App) GetProfPic(c *gin.Context) {
 
 func (app *App) GetUserInfo(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT firstname, lastname, email, phone, image, role FROM users WHERE user_id=$1", uid)
+	res, err := app.DB.Query("SELECT firstname, lastname, email, image, role FROM users WHERE user_id=$1", uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 		return
 	}
 	res.Next()
 	var user models.User
-	if err = res.Scan(&user.Firstname, &user.Lastname, &user.Email, &user.Phone, &user.Image, &user.Role); err != nil {
+	if err = res.Scan(&user.Firstname, &user.Lastname, &user.Email, &user.Image, &user.Role); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
 		return
 	}

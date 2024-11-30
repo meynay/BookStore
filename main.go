@@ -44,7 +44,22 @@ func main() {
 			SenderEmail: os.Getenv("SMTP_USERNAME"),
 		},
 		ResetToken: make(map[string]string),
+		RateLimit: models.RateLimiter{
+			Visitors: make(map[string][]bool),
+		},
 	}
+	go func() {
+		for {
+			time.Sleep(2 * time.Minute)
+			app.RateLimit.Mutex.Lock()
+			for ip, v := range app.RateLimit.Visitors {
+				if len(v) == 0 {
+					delete(app.RateLimit.Visitors, ip)
+				}
+			}
+			app.RateLimit.Mutex.Unlock()
+		}
+	}()
 	engine := gin.Default()
 	engine.Use(gzip.Gzip(gzip.BestCompression, gzip.WithExcludedExtensions([]string{".png", ".jpeg"})))
 	engine.Use(cors.New(cors.Config{
@@ -55,6 +70,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
+	engine.Use(app.DDOSPrevent())
 	engine.Use(app.ApiKeyCheck())
 	{
 		//user sign in/up apis

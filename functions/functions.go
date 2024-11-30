@@ -106,7 +106,7 @@ func SendEmail(to, subject, body string, config models.EmailConfig) error {
 	m.SetHeader("To", to)
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/html", body)
-	log.Println(fmt.Sprintf("Sending mail to %s From %s Subject is %s", to, config.SenderEmail, subject))
+	log.Printf("Sending mail to %s From %s Subject is %s", to, config.SenderEmail, subject)
 	d := gomail.NewDialer(config.SMTPHost, config.SMTPPort, config.Username, config.Password)
 	if err := d.DialAndSend(m); err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
