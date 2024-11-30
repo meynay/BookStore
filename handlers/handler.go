@@ -1186,7 +1186,7 @@ func (app *App) GetActiveInvoice(c *gin.Context) {
 
 func (app *App) FinalizeInvoice(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("authorization"))
-	res, err := app.DB.Query("SELECT invocie_id FROM invocie WHERE user_id=$1 AND status='open'", uid)
+	res, err := app.DB.Query("SELECT invoice_id FROM invoice WHERE user_id=$1 AND status='open'", uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
