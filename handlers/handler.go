@@ -563,7 +563,7 @@ func (app *App) Signup(c *gin.Context) {
 	user.Id = id + 1
 	user.Role = false
 	user.Image = "tempo"
-	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, email, image, role) values ($1, $2, $3, $4, $5, $6, $7, $8)", user.Id, user.Firstname, user.Lastname, user.Password, user.Email, user.Image, user.Role)
+	app.DB.Exec("INSERT INTO users(user_id, firstname, lastname, password, email, image, role) values ($1, $2, $3, $4, $5, $6, $7)", user.Id, user.Firstname, user.Lastname, user.Password, user.Email, user.Image, user.Role)
 	subject := "Bookstore sign up"
 	body := fmt.Sprintf(`
 		<h1>Welcome %s %s<h1>
