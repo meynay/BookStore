@@ -1221,7 +1221,7 @@ func (app *App) FinalizeInvoice(c *gin.Context) {
 
 func (app *App) ShowInvoice(c *gin.Context) {
 	iid, _ := strconv.Atoi(c.Param("invoice"))
-	res, err := app.DB.Query("SELECT book.book_id, book.price, book.title, book.image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id INNER JOIN book ON book.book_id=invoice_book.book_id WHERE invoice_id=$1", iid)
+	res, err := app.DB.Query("SELECT book.book_id, book.price, book.title, book.image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id INNER JOIN book ON book.book_id=invoice_book.book_id WHERE invoice.invoice_id=$1", iid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
