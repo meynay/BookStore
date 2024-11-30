@@ -1064,7 +1064,7 @@ func (app *App) AddToCart(c *gin.Context) {
 	res.Next()
 	var count int
 	res.Scan(&count)
-	if count != 0 {
+	if count == 0 {
 		c.JSON(http.StatusNotAcceptable, gin.H{"message": "can't add this item to your cart"})
 		return
 	}
@@ -1076,7 +1076,7 @@ func (app *App) AddToCart(c *gin.Context) {
 	var invoice_id int
 	if !res.Next() {
 		res.Close()
-		res, err = app.DB.Query("SELECT invoice_id FROM invoices ORDER BY invoice_id DESC LIMIT 1")
+		res, err = app.DB.Query("SELECT invoice_id FROM invoice ORDER BY invoice_id DESC LIMIT 1")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1143,7 +1143,7 @@ func (app *App) IsInCart(c *gin.Context) {
 
 func (app *App) GetActiveInvoice(c *gin.Context) {
 	uid := functions.GetUserId(c.GetHeader("authorization"))
-	res, err := app.DB.Query("SELECT book_id, price, title, image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id=invoice_book.invoice_id INNER JOIN book ON book.book_id=invoice_book.book_id WHERE invocie.status='open' AND invoice.user_id=$1", uid)
+	res, err := app.DB.Query("SELECT book.book_id, book.price, book.title, book.image_url FROM invoice INNER JOIN invoice_book ON invoice.invoice_id = invoice_book.invoice_id INNER JOIN book ON book.book_id = invoice_book.book_id WHERE invoice.status = 'open' AND invoice.user_id = $1", uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
