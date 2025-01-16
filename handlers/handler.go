@@ -1304,3 +1304,20 @@ func (app *App) CustomerInvoiceHistory(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, invoices)
 }
+
+func (app *App) IsAdmin(c *gin.Context) {
+	uid := functions.GetUserId(c.GetHeader("authorization"))
+	res, err := app.DB.Query("SELECT role from users WHERE user_id=$1", uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+		return
+	}
+	res.Next()
+	var b bool
+	res.Scan(&b)
+	if !b {
+		c.JSON(http.StatusNotAcceptable, gin.H{"message": "not admin"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "is admin"})
+}

@@ -128,6 +128,7 @@ func main() {
 			engine.POST("/logout", app.Logout)
 
 			//administrative apis
+			engine.GET("/isadmin", app.IsAdmin)
 			engine.GET("/borrowedbooks", app.ShowActiveBorrows)
 			engine.POST("/returnbook/:bookid", app.ReturnBook)
 			engine.GET("/customerinvoices", app.CustomerInvoiceHistory)
