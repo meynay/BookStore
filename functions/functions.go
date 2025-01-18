@@ -135,11 +135,11 @@ func SendResetPassEmail(email, token string, config models.EmailConfig) error {
 	return SendEmail(email, subject, body, config)
 }
 
-func GetBorrowedBooks(result *sql.Rows) []models.BorrowedBook {
-	books := []models.BorrowedBook{}
+func GetBorrowedBooks(result *sql.Rows) []models.LowBook {
+	books := []models.LowBook{}
 	for result.Next() {
-		var book models.BorrowedBook
-		result.Scan(&book.Book.Id, &book.Book.Title, &book.Book.ImageUrl, &book.Book.Rate, &book.Book.Count, &book.BorrowTime, &book.Returned)
+		var book models.LowBook
+		result.Scan(&book.Id, &book.Title, &book.ImageUrl, &book.Rate, &book.Count)
 		books = append(books, book)
 	}
 	return books
