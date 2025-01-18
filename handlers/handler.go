@@ -808,7 +808,7 @@ func (app *App) RecommendByRecord(c *gin.Context) {
 			}
 		}
 	}
-	for i := range result {
+	for i := 0; i < len(result); i++ {
 		if functions.Exists(result[i], bids) {
 			result = append(result[:i], result[i+1:]...)
 		}
