@@ -954,7 +954,7 @@ func (app *App) GetLibStatus(c *gin.Context) {
 func (app *App) BorrowBook(c *gin.Context) {
 	bid, _ := strconv.Atoi(c.Param("bookid"))
 	uid := functions.GetUserId(c.GetHeader("Authorization"))
-	res, err := app.DB.Query("SELECT * FROM borrow_book WHERE user_id=$1 and resturned='no'", uid)
+	res, err := app.DB.Query("SELECT * FROM borrow_book WHERE user_id=$1 and returned='no'", uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
