@@ -1278,7 +1278,7 @@ func (app *App) CustomerInvoiceHistory(c *gin.Context) {
 		return
 	}
 	res.Close()
-	res, err = app.DB.Query("SELECT invoice_id, purchase_date, (firstname || ' ' || lastname) as name FROM invoice INNER JOIN users on users.user_id=invoice.user_id WHERE status='close'", uid)
+	res, err = app.DB.Query("SELECT invoice_id, purchase_date, (firstname || ' ' || lastname) as name FROM invoice INNER JOIN users on users.user_id=invoice.user_id WHERE status='close'")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
