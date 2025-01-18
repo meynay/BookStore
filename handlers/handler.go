@@ -1054,7 +1054,7 @@ func (app *App) ShowActiveBorrows(c *gin.Context) {
 		return
 	}
 	res.Close()
-	res, err = app.DB.Query("SELECT book_id, title, image_url, avg_rate, rate_count, borrow_time, returned FROM borrow_book INNER JOIN book ON borrow_book.book_id = book.book_id WHERE returned='no'")
+	res, err = app.DB.Query("SELECT book.book_id, title, image_url, avg_rate, rate_count, borrow_time, returned FROM borrow_book INNER JOIN book ON borrow_book.book_id = book.book_id WHERE returned='no'")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
