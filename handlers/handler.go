@@ -963,7 +963,7 @@ func (app *App) BorrowBook(c *gin.Context) {
 		c.JSON(http.StatusNotAcceptable, gin.H{"message": "user still haven't returned last borrowed book"})
 		return
 	}
-	_, err = app.DB.Exec("INSERT INTO borrow_book(book_id, user_id, returned, borrow_time), values($1, $2, 'no', $3)", bid, uid, time.Now())
+	_, err = app.DB.Exec("INSERT INTO borrow_book(book_id, user_id, returned, borrow_time) values($1, $2, 'no', $3)", bid, uid, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
